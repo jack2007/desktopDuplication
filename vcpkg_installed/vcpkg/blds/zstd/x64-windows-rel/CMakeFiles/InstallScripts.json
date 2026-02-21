@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-rel/cmake_install.cmake",
+		"D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-rel/lib/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

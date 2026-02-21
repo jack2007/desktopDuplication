@@ -1,0 +1,10 @@
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/cmake/zstd/zstdTargets.cmake
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/cmake/zstd/zstdTargets-debug.cmake
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/cmake/zstd/zstdConfig.cmake
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/cmake/zstd/zstdConfigVersion.cmake
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/pkgconfig/libzstd.pc
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/include/zdict.h
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/include/zstd.h
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/include/zstd_errors.h
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/lib/zstd.lib
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/pkgs/zstd_x64-windows/debug/bin/zstd.dll

@@ -1,0 +1,13 @@
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/clean-all.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/edit_cache.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/rebuild_cache.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/list_install_components.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/install.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/CMakeFiles/install/local.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/libzstd_shared.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/uninstall.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/edit_cache.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/rebuild_cache.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/list_install_components.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/install.dir
+D:/code/windows-samples/DXGIDesktopDuplication/cpp/vcpkg_installed/vcpkg/blds/zstd/x64-windows-dbg/lib/CMakeFiles/install/local.dir
