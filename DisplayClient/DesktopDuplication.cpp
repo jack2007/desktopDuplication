@@ -55,8 +55,10 @@ HRESULT EnumOutputsExpectedErrors[] = {
 //
 // Forward Declarations
 //
+static const int SERVER_IP_BUFFER_SIZE = 64;
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-bool ProcessCmdline(_Out_ INT* Output);
+bool ProcessCmdline(_Out_ INT* Output, _Out_writes_(SERVER_IP_BUFFER_SIZE) char* ServerIP, _Out_ int* Port);
 void ShowHelp();
 
 //
@@ -148,11 +150,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     INT SingleOutput;
+    char ServerIP[SERVER_IP_BUFFER_SIZE];
+    int ServerPort;
 
     // Window
     HWND WindowHandle = nullptr;
 
-    bool CmdResult = ProcessCmdline(&SingleOutput);
+    bool CmdResult = ProcessCmdline(&SingleOutput, ServerIP, &ServerPort);
     if (!CmdResult)
     {
         ShowHelp();
@@ -207,10 +211,30 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     ShowWindow(WindowHandle, nCmdShow);
     UpdateWindow(WindowHandle);
 
-    DUPL_RETURN Ret = g_ClientLogic.Initialize(WindowHandle);
+    DUPL_RETURN Ret = g_ClientLogic.Initialize(WindowHandle, ServerIP, ServerPort);
     if (Ret == DUPL_RETURN_SUCCESS)
     {
-        g_ClientLogic.RunLoop();
+        DYNAMIC_WAIT DynWait;
+        for (;;)
+        {
+            g_ClientLogic.RunLoop();
+
+            // RunLoop exited; stop if window was closed
+            MSG peekMsg = {};
+            if (PeekMessage(&peekMsg, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE) && peekMsg.message == WM_QUIT)
+            {
+                break;
+            }
+
+            // Connection was lost; attempt to reconnect with progressive backoff
+            g_ClientLogic.Clean();
+            DynWait.Wait();
+            Ret = g_ClientLogic.Initialize(WindowHandle, ServerIP, ServerPort);
+            if (Ret == DUPL_RETURN_ERROR_UNEXPECTED)
+            {
+                break;
+            }
+        }
     }
 
     // Clean up
@@ -224,16 +248,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 //
 void ShowHelp()
 {
-    DisplayMsg(L"The following optional parameters can be used -\n  /output [all | n]\t\tto duplicate all outputs or the nth output\n  /?\t\t\tto display this help section",
+    DisplayMsg(L"The following optional parameters can be used -\n"
+               L"  /output [all | n]\t\tto duplicate all outputs or the nth output\n"
+               L"  /server <ip>\t\t\tto specify the capture server IP address (default: 127.0.0.1)\n"
+               L"  /port <n>\t\t\tto specify the server port (default: 12306)\n"
+               L"  /?\t\t\t\tto display this help section",
                L"Proper usage", S_OK);
 }
 
 //
 // Process command line parameters
 //
-bool ProcessCmdline(_Out_ INT* Output)
+bool ProcessCmdline(_Out_ INT* Output, _Out_writes_(SERVER_IP_BUFFER_SIZE) char* ServerIP, _Out_ int* Port)
 {
     *Output = -1;
+    strcpy_s(ServerIP, SERVER_IP_BUFFER_SIZE, "127.0.0.1");
+    *Port = DEFAULT_SERVER_PORT;
 
     // __argv and __argc are global vars set by system
     for (UINT i = 1; i < static_cast<UINT>(__argc); ++i)
@@ -253,6 +283,30 @@ bool ProcessCmdline(_Out_ INT* Output)
             else
             {
                 *Output = atoi(__argv[i]);
+            }
+            continue;
+        }
+        else if ((strcmp(__argv[i], "-server") == 0) ||
+                 (strcmp(__argv[i], "/server") == 0))
+        {
+            if (++i >= static_cast<UINT>(__argc))
+            {
+                return false;
+            }
+            strcpy_s(ServerIP, SERVER_IP_BUFFER_SIZE, __argv[i]);
+            continue;
+        }
+        else if ((strcmp(__argv[i], "-port") == 0) ||
+                 (strcmp(__argv[i], "/port") == 0))
+        {
+            if (++i >= static_cast<UINT>(__argc))
+            {
+                return false;
+            }
+            *Port = atoi(__argv[i]);
+            if (*Port <= 0 || *Port > 65535)
+            {
+                return false;
             }
             continue;
         }
@@ -279,7 +333,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case WM_SIZE:
         {
             // Tell output manager that window size has changed
-            // g_ClientLogic.WindowResize();
+            g_ClientLogic.WindowResize();
             break;
         }
         default:
