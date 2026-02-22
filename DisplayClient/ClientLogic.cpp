@@ -12,7 +12,7 @@
 #include "VertexShader.h"
 #include "PixelShader.h"
 
-ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(true)
+ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(false), m_FrameCount(0), m_LastFPSTick(0), m_ServerPort(0)
 {
     RtlZeroMemory(&m_DxRes, sizeof(m_DxRes));
     RtlZeroMemory(&m_InitData, sizeof(m_InitData));
@@ -94,6 +94,19 @@ void ClientLogic::CleanDx()
         m_DxRes.SamplerLinear->Release();
         m_DxRes.SamplerLinear = nullptr;
     }
+}
+
+void ClientLogic::WindowResize()
+{
+    m_OutMgr.WindowResize();
+}
+
+void ClientLogic::UpdateWindowTitle(float fps)
+{
+    wchar_t title[256];
+    swprintf_s(title, L"Desktop Duplication Client | %hs:%d | FPS: %.1f",
+               m_ServerIP.c_str(), m_ServerPort, fps);
+    SetWindowTextW(m_WindowHandle, title);
 }
 
 DUPL_RETURN ClientLogic::InitializeDx()
@@ -178,11 +191,13 @@ DUPL_RETURN ClientLogic::InitializeDx()
     return DUPL_RETURN_SUCCESS;
 }
 
-DUPL_RETURN ClientLogic::Initialize(HWND windowHandle)
+DUPL_RETURN ClientLogic::Initialize(HWND windowHandle, const char* serverIP, int port)
 {
     m_WindowHandle = windowHandle;
+    m_ServerIP = serverIP ? serverIP : "127.0.0.1";
+    m_ServerPort = port;
 
-    if (!m_NetClient.Initialize("127.0.0.1", DEFAULT_SERVER_PORT))
+    if (!m_NetClient.Initialize(m_ServerIP.c_str(), m_ServerPort))
     {
         return ProcessFailure(nullptr, L"Failed to connect to server", L"Error", E_FAIL);
     }
@@ -275,6 +290,9 @@ bool ClientLogic::UpdateLocalTexture(const std::vector<BYTE>& pixelData, const R
 void ClientLogic::RunLoop()
 {
     MSG msg = { 0 };
+    m_FrameCount = 0;
+    m_LastFPSTick = GetTickCount();
+
     while (WM_QUIT != msg.message)
     {
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -387,6 +405,18 @@ void ClientLogic::RunLoop()
             if (!m_Occluded)
             {
                 m_OutMgr.UpdateApplicationWindow(&m_PtrInfo, &m_Occluded);
+            }
+
+            // Update FPS in window title every second
+            m_FrameCount++;
+            DWORD now = GetTickCount();
+            DWORD elapsed = now - m_LastFPSTick;
+            if (elapsed >= 1000)
+            {
+                float fps = static_cast<float>(m_FrameCount) * 1000.0f / static_cast<float>(elapsed);
+                UpdateWindowTitle(fps);
+                m_FrameCount = 0;
+                m_LastFPSTick = now;
             }
     }
 }

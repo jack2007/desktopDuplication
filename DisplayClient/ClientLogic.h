@@ -10,6 +10,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <string>
 #include "CommonTypes.h"
 #include "NetworkClient.h"
 #include "DisplayManager.h"
@@ -21,14 +22,16 @@ public:
     ClientLogic();
     ~ClientLogic();
 
-    DUPL_RETURN Initialize(HWND windowHandle);
+    DUPL_RETURN Initialize(HWND windowHandle, const char* serverIP, int port);
     void RunLoop();
     void Clean();
+    void WindowResize();
 
 private:
     DUPL_RETURN InitializeDx();
     void CleanDx();
     bool UpdateLocalTexture(const std::vector<BYTE>& pixelData, const RECT* dirtyRects, UINT dirtyCount);
+    void UpdateWindowTitle(float fps);
 
     NetworkClient m_NetClient;
     DISPLAYMANAGER m_DispMgr;
@@ -43,6 +46,14 @@ private:
     InitPacket m_InitData;
     PTR_INFO m_PtrInfo;
     bool m_Occluded;
+
+    // FPS tracking
+    DWORD m_FrameCount;
+    DWORD m_LastFPSTick;
+
+    // Connection info for window title
+    std::string m_ServerIP;
+    int m_ServerPort;
 };
 
 #endif
