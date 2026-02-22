@@ -86,6 +86,7 @@ typedef struct _THREAD_DATA
     INT OffsetY;
     PTR_INFO* PtrInfo;
     DX_RESOURCES DxRes;
+    UINT TargetFPS;
 } THREAD_DATA;
 
 //

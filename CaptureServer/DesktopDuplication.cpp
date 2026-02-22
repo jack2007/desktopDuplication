@@ -59,7 +59,7 @@ HRESULT EnumOutputsExpectedErrors[] = {
 // Forward Declarations
 //
 DWORD WINAPI DDProc(_In_ void* Param);
-bool ProcessCmdline(_Out_ INT* Output);
+bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS);
 void ShowHelp();
 DUPL_RETURN GetOutputCountAndBounds(INT SingleOutput, _Out_ UINT* OutCount, _Out_ RECT* DeskBounds);
 
@@ -149,13 +149,15 @@ void DYNAMIC_WAIT::Wait()
 int main()
 {
     INT SingleOutput;
+    INT ServerPort;
+    UINT TargetFPS;
 
     // Synchronization
     HANDLE UnexpectedErrorEvent = nullptr;
     HANDLE ExpectedErrorEvent = nullptr;
     HANDLE TerminateThreadsEvent = nullptr;
 
-    bool CmdResult = ProcessCmdline(&SingleOutput);
+    bool CmdResult = ProcessCmdline(&SingleOutput, &ServerPort, &TargetFPS);
     if (!CmdResult)
     {
         ShowHelp();
@@ -193,7 +195,7 @@ int main()
     }
 
     // Initialize Network Manager
-    if (!NetMgr.Initialize(DEFAULT_SERVER_PORT))
+    if (!NetMgr.Initialize(ServerPort))
     {
         ProcessFailure(nullptr, L"Failed to initialize network manager", L"Error", E_FAIL);
         return 0;
@@ -253,7 +255,7 @@ int main()
                 // Wait for client connection if not connected
                 if (!NetMgr.IsConnected())
                 {
-                    wprintf(L"Waiting for client connection on port %d...\n", DEFAULT_SERVER_PORT);
+                    wprintf(L"Waiting for client connection on port %d...\n", ServerPort);
                     if (!NetMgr.WaitForClient())
                     {
                         Ret = DUPL_RETURN_ERROR_UNEXPECTED;
@@ -266,7 +268,7 @@ int main()
 
                 if (Ret == DUPL_RETURN_SUCCESS)
                 {
-                    Ret = ThreadMgr.Initialize(SingleOutput, OutputCount, UnexpectedErrorEvent, ExpectedErrorEvent, TerminateThreadsEvent, nullptr, &DeskBounds);
+                    Ret = ThreadMgr.Initialize(SingleOutput, OutputCount, UnexpectedErrorEvent, ExpectedErrorEvent, TerminateThreadsEvent, nullptr, &DeskBounds, TargetFPS);
                     if (Ret != DUPL_RETURN_SUCCESS)
                     {
                         DisplayMsg(L"Failed to initialize threads", L"Error", S_OK);
@@ -311,16 +313,18 @@ int main()
 //
 void ShowHelp()
 {
-    DisplayMsg(L"The following optional parameters can be used -\n  /output [all | n]\t\tto duplicate all outputs or the nth output\n  /?\t\t\tto display this help section",
+    DisplayMsg(L"The following optional parameters can be used -\n  /output [all | n]\t\tto duplicate all outputs or the nth output\n  /port [n]\t\t\tto listen on port n (default: 12306)\n  /fps [n]\t\t\tto limit capture to n frames per second (default: unlimited)\n  /?\t\t\t\tto display this help section",
                L"Proper usage", S_OK);
 }
 
 //
 // Process command line parameters
 //
-bool ProcessCmdline(_Out_ INT* Output)
+bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS)
 {
     *Output = -1;
+    *Port = DEFAULT_SERVER_PORT;
+    *TargetFPS = 0;
 
     // __argv and __argc are global vars set by system
     for (UINT i = 1; i < static_cast<UINT>(__argc); ++i)
@@ -341,6 +345,36 @@ bool ProcessCmdline(_Out_ INT* Output)
             {
                 *Output = atoi(__argv[i]);
             }
+            continue;
+        }
+        else if ((strcmp(__argv[i], "-port") == 0) ||
+                 (strcmp(__argv[i], "/port") == 0))
+        {
+            if (++i >= static_cast<UINT>(__argc))
+            {
+                return false;
+            }
+            int port = atoi(__argv[i]);
+            if (port <= 0 || port > 65535)
+            {
+                return false;
+            }
+            *Port = port;
+            continue;
+        }
+        else if ((strcmp(__argv[i], "-fps") == 0) ||
+                 (strcmp(__argv[i], "/fps") == 0))
+        {
+            if (++i >= static_cast<UINT>(__argc))
+            {
+                return false;
+            }
+            int fps = atoi(__argv[i]);
+            if (fps < 0)
+            {
+                return false;
+            }
+            *TargetFPS = static_cast<UINT>(fps);
             continue;
         }
         else
@@ -479,6 +513,17 @@ DWORD WINAPI DDProc(_In_ void* Param)
     bool WaitToProcessCurrentFrame = false;
     FRAME_DATA CurrentData;
 
+    // FPS throttling and server-side stats
+    LARGE_INTEGER qpcFreq = {};
+    LARGE_INTEGER lastSentFrameTime = {};
+    QueryPerformanceFrequency(&qpcFreq);
+    QueryPerformanceCounter(&lastSentFrameTime);
+    LONGLONG frameIntervalTicks = (TData->TargetFPS > 0 && qpcFreq.QuadPart > 0)
+        ? (qpcFreq.QuadPart / static_cast<LONGLONG>(TData->TargetFPS)) : 0LL;
+
+    UINT statsFrameCount = 0;
+    ULONGLONG statsLastTick = GetTickCount64();
+
     while ((WaitForSingleObjectEx(TData->TerminateThreadsEvent, 0, FALSE) == WAIT_TIMEOUT))
     {
         if (!WaitToProcessCurrentFrame)
@@ -512,6 +557,18 @@ DWORD WINAPI DDProc(_In_ void* Param)
             break;
         }
 
+        // FPS throttling: skip frame if target FPS is set and not enough time has elapsed
+        if (frameIntervalTicks > 0)
+        {
+            LARGE_INTEGER currentTime;
+            QueryPerformanceCounter(&currentTime);
+            if ((currentTime.QuadPart - lastSentFrameTime.QuadPart) < frameIntervalTicks)
+            {
+                DuplMgr.DoneWithFrame();
+                continue;
+            }
+        }
+
         // Process new frame and send over network
         if (!NetMgr.SendFramePacket(&CurrentData, TData->PtrInfo, TData->DxRes.Device, TData->DxRes.Context))
         {
@@ -519,6 +576,19 @@ DWORD WINAPI DDProc(_In_ void* Param)
             Ret = DUPL_RETURN_ERROR_EXPECTED;
             SetEvent(TData->ExpectedErrorEvent);
             break;
+        }
+
+        // Update FPS tracking and log stats every second
+        QueryPerformanceCounter(&lastSentFrameTime);
+        statsFrameCount++;
+        ULONGLONG nowMs = GetTickCount64();
+        ULONGLONG elapsed = nowMs - statsLastTick;
+        if (elapsed >= 1000)
+        {
+            float fps = static_cast<float>(statsFrameCount) * 1000.0f / static_cast<float>(elapsed);
+            wprintf(L"Capture FPS: %.1f\n", fps);
+            statsFrameCount = 0;
+            statsLastTick = nowMs;
         }
 
         // Release frame back to desktop duplication
