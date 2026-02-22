@@ -41,11 +41,16 @@ struct FramePacketHeader
     UINT32 DirtyRectCount;
     UINT32 MoveRectCount;
     bool HasPointerInfo;
+    // When true the pixel payload is a flat dense-packed array of dirty-rect
+    // pixels (one contiguous block per dirty rect, in scanline order).
+    // The client must use UpdateSubresource per rect rather than treating the
+    // data as a full-frame buffer.
+    bool IsDensePacked;
     // Followed by:
     // RECT DirtyRects[DirtyRectCount]
     // DXGI_OUTDUPL_MOVE_RECT MoveRects[MoveRectCount]
     // PTR_INFO PointerInfo (if HasPointerInfo is true)
-    // Pixel Data (Compressed)
+    // Pixel Data (densely packed dirty-rect pixels when IsDensePacked is true)
 };
 #pragma pack(pop)
 

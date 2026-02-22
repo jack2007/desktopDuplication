@@ -27,7 +27,7 @@ add_executable(CaptureServer
     CaptureServer/ThreadManager.cpp
     CaptureServer/NetworkManager.cpp
 )
-target_link_libraries(CaptureServer PRIVATE Common d3d11 dxgi)
+target_link_libraries(CaptureServer PRIVATE Common d3d11 dxgi d3dcompiler)
 
 # Display Client
 add_executable(DisplayClient WIN32
@@ -52,6 +52,7 @@ endfunction()
 
 compile_shader(CaptureServer Common/VertexShader.hlsl VS vs_4_0 VertexShader.h)
 compile_shader(CaptureServer Common/PixelShader.hlsl PS ps_4_0 PixelShader.h)
+compile_shader(CaptureServer CaptureServer/RLECompress.hlsl CSMain cs_5_0 RLECompress.h)
 
 compile_shader(DisplayClient Common/VertexShader.hlsl VS vs_4_0 VertexShader.h)
 compile_shader(DisplayClient Common/PixelShader.hlsl PS ps_4_0 PixelShader.h)
