@@ -373,6 +373,9 @@ void ClientLogic::RunLoop()
             if (header.DirtyRectCount > 0 && offset < uncompressedData.size())
             {
                 pixelData.assign(uncompressedData.begin() + offset, uncompressedData.end());
+                // IsDensePacked: pixel payload is a flat dense-packed array of dirty-rect
+                // pixels (one contiguous block per dirty rect, in scanline order).
+                // UpdateLocalTexture expects exactly this layout.
                 UpdateLocalTexture(pixelData, dirtyRects, header.DirtyRectCount);
             }
 
