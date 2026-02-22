@@ -182,8 +182,20 @@ bool NetworkManager::ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device
         if (FAILED(hr)) return false;
     }
 
-    // Copy from GPU to Staging
-    context->CopyResource(m_StagingTexture, srcTexture);
+    if (dirtyCount == 0) return true;
+
+    // Copy only dirty regions from GPU to Staging
+    for (UINT i = 0; i < dirtyCount; ++i)
+    {
+        D3D11_BOX box;
+        box.left   = dirtyRects[i].left;
+        box.right  = dirtyRects[i].right;
+        box.top    = dirtyRects[i].top;
+        box.bottom = dirtyRects[i].bottom;
+        box.front  = 0;
+        box.back   = 1;
+        context->CopySubresourceRegion(m_StagingTexture, 0, box.left, box.top, 0, srcTexture, 0, &box);
+    }
 
     // Map Staging Texture
     D3D11_MAPPED_SUBRESOURCE mapped;
