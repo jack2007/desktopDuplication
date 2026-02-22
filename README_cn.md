@@ -52,15 +52,14 @@ CaptureServer.exe [选项]
 ```
 
 选项：
-- `-output <index>` - 指定输出设备索引（使用数字指定单个输出，或 "all" 捕获所有输出，默认：-1 表示第一个输出）
 - `-port <端口>` - 指定监听端口（默认：9000）
 - `-fps <帧率>` - 目标帧率（默认：0 表示无限制）
 - `-compress <级别>` - 压缩级别 0-9（默认：0）
 
 示例：
 ```bash
-CaptureServer.exe -output 0 -port 9000 -fps 60 -compress 5
-CaptureServer.exe -output all -port 9000
+CaptureServer.exe -port 9000 -fps 60 -compress 5
+CaptureServer.exe -port 9000
 ```
 
 ### 启动 DisplayClient（客户端）

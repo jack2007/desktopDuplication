@@ -52,7 +52,6 @@ CaptureServer.exe [options]
 ```
 
 Options:
-- `-output <index>` - Specify output device index (use number for single output, or "all" to capture all outputs, default: -1 means first output)
 - `-port <port>` - Specify listening port (default: 9000)
 - `-fps <fps>` - Target frame rate (default: 0 means unlimited)
 - `-compress <level>` - Compression level 0-9 (default: 0)
