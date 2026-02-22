@@ -46,6 +46,7 @@ private:
     InitPacket m_InitData;
     PTR_INFO m_PtrInfo;
     bool m_Occluded;
+    std::vector<BYTE> m_PrevFrame;  // previous frame buffer for XOR delta decoding
 
     // FPS tracking
     DWORD m_FrameCount;

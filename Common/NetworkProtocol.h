@@ -41,6 +41,7 @@ struct FramePacketHeader
     UINT32 DirtyRectCount;
     UINT32 MoveRectCount;
     bool HasPointerInfo;
+    bool IsDeltaEncoded;   // true: pixel data is XOR diff vs previous frame
     // Followed by:
     // RECT DirtyRects[DirtyRectCount]
     // DXGI_OUTDUPL_MOVE_RECT MoveRects[MoveRectCount]
