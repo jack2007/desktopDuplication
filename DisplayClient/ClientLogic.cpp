@@ -6,6 +6,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved
 
 #include "ClientLogic.h"
+#include <emmintrin.h>
 #include <iostream>
 
 // Include shaders only once in the cpp file that needs them
@@ -373,6 +374,68 @@ void ClientLogic::RunLoop()
             if (header.DirtyRectCount > 0 && offset < uncompressedData.size())
             {
                 pixelData.assign(uncompressedData.begin() + offset, uncompressedData.end());
+
+                // Ensure previous-frame buffer is sized for the full screen
+                size_t fullFrameSize = static_cast<size_t>(m_InitData.Width) * m_InitData.Height * 4;
+                if (m_PrevFrame.size() != fullFrameSize)
+                {
+                    m_PrevFrame.assign(fullFrameSize, 0);
+                }
+
+                if (header.IsDeltaEncoded)
+                {
+                    // XOR-decode each dirty rect's pixel data in-place using SSE2
+                    size_t pixelOffset = 0;
+                    for (UINT ri = 0; ri < header.DirtyRectCount; ++ri)
+                    {
+                        UINT width  = dirtyRects[ri].right  - dirtyRects[ri].left;
+                        UINT height = dirtyRects[ri].bottom - dirtyRects[ri].top;
+                        UINT rowBytes = width * 4;
+
+                        for (UINT y = 0; y < height; ++y)
+                        {
+                            BYTE* dstRow  = pixelData.data() + pixelOffset;
+                            BYTE* prevRow = m_PrevFrame.data()
+                                            + ((dirtyRects[ri].top + y) * m_InitData.Width + dirtyRects[ri].left) * 4;
+
+                            UINT x = 0;
+                            for (; x + 16 <= rowBytes; x += 16)
+                            {
+                                __m128i delta = _mm_loadu_si128(reinterpret_cast<const __m128i*>(dstRow  + x));
+                                __m128i prev  = _mm_loadu_si128(reinterpret_cast<const __m128i*>(prevRow + x));
+                                __m128i cur   = _mm_xor_si128(delta, prev);
+                                _mm_storeu_si128(reinterpret_cast<__m128i*>(dstRow  + x), cur);
+                                _mm_storeu_si128(reinterpret_cast<__m128i*>(prevRow + x), cur);
+                            }
+                            for (; x < rowBytes; ++x)
+                            {
+                                dstRow[x]  = dstRow[x] ^ prevRow[x];
+                                prevRow[x] = dstRow[x];
+                            }
+
+                            pixelOffset += rowBytes;
+                        }
+                    }
+                }
+                else
+                {
+                    // Full frame: update previous-frame buffer from raw pixel data
+                    size_t pixelOffset = 0;
+                    for (UINT ri = 0; ri < header.DirtyRectCount; ++ri)
+                    {
+                        UINT width  = dirtyRects[ri].right  - dirtyRects[ri].left;
+                        UINT height = dirtyRects[ri].bottom - dirtyRects[ri].top;
+                        UINT rowBytes = width * 4;
+                        for (UINT y = 0; y < height; ++y)
+                        {
+                            BYTE* prevRow = m_PrevFrame.data()
+                                            + ((dirtyRects[ri].top + y) * m_InitData.Width + dirtyRects[ri].left) * 4;
+                            memcpy(prevRow, pixelData.data() + pixelOffset, rowBytes);
+                            pixelOffset += rowBytes;
+                        }
+                    }
+                }
+
                 UpdateLocalTexture(pixelData, dirtyRects, header.DirtyRectCount);
             }
 

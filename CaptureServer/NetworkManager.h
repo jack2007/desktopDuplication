@@ -37,6 +37,7 @@ private:
     bool m_NeedsFullFrame;
     UINT32 m_ScreenWidth;
     UINT32 m_ScreenHeight;
+    std::vector<BYTE> m_PrevFrame;  // previous frame buffer for inter-frame XOR diff
 };
 
 #endif

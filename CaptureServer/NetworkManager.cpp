@@ -6,6 +6,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved
 
 #include "NetworkManager.h"
+#include <emmintrin.h>
+#include <cstring>
 #include <iostream>
 
 NetworkManager::NetworkManager() : m_StagingTexture(nullptr), m_NeedsFullFrame(true), m_ScreenWidth(0), m_ScreenHeight(0)
@@ -42,6 +44,8 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     m_ScreenWidth = width;
     m_ScreenHeight = height;
     m_NeedsFullFrame = true;
+    // Reset previous frame buffer so the first frame after (re)connect is sent as raw pixels
+    m_PrevFrame.assign(static_cast<size_t>(width) * height * 4, 0);
 
     InitPacket initData;
     initData.Width = width;
@@ -74,6 +78,7 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     frameHeader.DirtyRectCount = data->DirtyCount;
     frameHeader.MoveRectCount = data->MoveCount;
     frameHeader.HasPointerInfo = (ptrInfo && ptrInfo->Visible);
+    frameHeader.IsDeltaEncoded = !m_NeedsFullFrame;
 
     RECT fullScreenRect = { 0, 0, static_cast<LONG>(m_ScreenWidth), static_cast<LONG>(m_ScreenHeight) };
     RECT* dirtyRects = nullptr;
@@ -212,18 +217,49 @@ bool NetworkManager::ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device
         totalPixelSize += width * height * bytesPerPixel;
     }
 
-    outPixels.reserve(totalPixelSize);
+    // Ensure previous-frame buffer is sized for the full screen
+    size_t fullFrameSize = static_cast<size_t>(m_ScreenWidth) * m_ScreenHeight * 4;
+    if (m_PrevFrame.size() != fullFrameSize)
+    {
+        m_PrevFrame.assign(fullFrameSize, 0);
+    }
 
-    // Copy dirty pixels
+    outPixels.resize(totalPixelSize);
+    size_t outOffset = 0;
+
+    // Copy dirty pixels with SSE2 XOR delta encoding
     for (UINT i = 0; i < dirtyCount; ++i)
     {
         UINT width = dirtyRects[i].right - dirtyRects[i].left;
         UINT height = dirtyRects[i].bottom - dirtyRects[i].top;
-        
+        UINT rowBytes = width * bytesPerPixel;
+
         for (UINT y = 0; y < height; ++y)
         {
-            BYTE* srcRow = static_cast<BYTE*>(mapped.pData) + ((dirtyRects[i].top + y) * mapped.RowPitch) + (dirtyRects[i].left * bytesPerPixel);
-            outPixels.insert(outPixels.end(), srcRow, srcRow + (width * bytesPerPixel));
+            const BYTE* srcRow = static_cast<const BYTE*>(mapped.pData)
+                                 + ((dirtyRects[i].top + y) * mapped.RowPitch)
+                                 + (dirtyRects[i].left * bytesPerPixel);
+            BYTE* prevRow = m_PrevFrame.data()
+                            + ((dirtyRects[i].top + y) * m_ScreenWidth + dirtyRects[i].left) * bytesPerPixel;
+            BYTE* dstRow = outPixels.data() + outOffset;
+
+            UINT x = 0;
+            // Process 16 bytes at a time using SSE2
+            for (; x + 16 <= rowBytes; x += 16)
+            {
+                __m128i cur  = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcRow  + x));
+                __m128i prev = _mm_loadu_si128(reinterpret_cast<const __m128i*>(prevRow + x));
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(dstRow + x), _mm_xor_si128(cur, prev));
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(prevRow + x), cur);
+            }
+            // Handle remaining bytes
+            for (; x < rowBytes; ++x)
+            {
+                dstRow[x] = srcRow[x] ^ prevRow[x];
+                prevRow[x] = srcRow[x];
+            }
+
+            outOffset += rowBytes;
         }
     }
 
