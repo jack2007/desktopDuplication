@@ -7,6 +7,7 @@
 
 #include "TcpClient.h"
 #include <iostream>
+#include <CommonTypes.h>
 
 TcpClient::TcpClient() : m_ConnectSocket(INVALID_SOCKET), m_Initialized(false)
 {
@@ -27,46 +28,33 @@ bool TcpClient::Connect(const char* ipAddress, int port)
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0)
     {
+        ProcessFailure(nullptr, L"WSAStartup Failed", L"Error", E_FAIL);
         return false;
     }
     m_Initialized = true;
 
-    struct addrinfo* result = NULL;
-    struct addrinfo hints;
-
-    ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-
-    char portStr[16];
-    sprintf_s(portStr, "%d", port);
-
-    iResult = getaddrinfo(ipAddress, portStr, &hints, &result);
-    if (iResult != 0)
+    // 创建socket
+    m_ConnectSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (m_ConnectSocket == INVALID_SOCKET)
     {
+        ProcessFailure(nullptr, L"socket Failed", L"Error", E_FAIL);
         return false;
     }
 
-    for (struct addrinfo* ptr = result; ptr != NULL; ptr = ptr->ai_next)
+	// 构造服务器地址
+	struct sockaddr_in serverAddr;
+    ZeroMemory(&serverAddr, sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(port);
+	serverAddr.sin_addr.s_addr = inet_addr(ipAddress);
+    iResult = connect(m_ConnectSocket, (const sockaddr *) & serverAddr, sizeof(serverAddr));
+    if (iResult == SOCKET_ERROR)
     {
-        m_ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-        if (m_ConnectSocket == INVALID_SOCKET)
-        {
-            continue;
-        }
+        ProcessFailure(nullptr, L"connect Failed", L"Error", E_FAIL);
+        closesocket(m_ConnectSocket);
+        m_ConnectSocket = INVALID_SOCKET;
 
-        iResult = connect(m_ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
-        if (iResult == SOCKET_ERROR)
-        {
-            closesocket(m_ConnectSocket);
-            m_ConnectSocket = INVALID_SOCKET;
-            continue;
-        }
-        break;
     }
-
-    freeaddrinfo(result);
 
     if (m_ConnectSocket == INVALID_SOCKET)
     {

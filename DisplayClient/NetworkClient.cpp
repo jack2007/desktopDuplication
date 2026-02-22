@@ -21,6 +21,7 @@ bool NetworkClient::Initialize(const char* ipAddress, int port)
 {
     if (!m_Compressor.Initialize())
     {
+        ProcessFailure(nullptr, L"m_Compressor.Initialize Failed", L"Error", E_FAIL);
         return false;
     }
     return m_Client.Connect(ipAddress, port);
