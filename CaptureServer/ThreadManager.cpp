@@ -106,7 +106,7 @@ void THREADMANAGER::CleanDx(_Inout_ DX_RESOURCES* Data)
 //
 // Start up threads for DDA
 //
-DUPL_RETURN THREADMANAGER::Initialize(INT SingleOutput, UINT OutputCount, HANDLE UnexpectedErrorEvent, HANDLE ExpectedErrorEvent, HANDLE TerminateThreadsEvent, HANDLE SharedHandle, _In_ RECT* DesktopDim)
+DUPL_RETURN THREADMANAGER::Initialize(INT SingleOutput, UINT OutputCount, HANDLE UnexpectedErrorEvent, HANDLE ExpectedErrorEvent, HANDLE TerminateThreadsEvent, HANDLE SharedHandle, _In_ RECT* DesktopDim, UINT TargetFPS)
 {
     m_ThreadCount = OutputCount;
     m_ThreadHandles = new (std::nothrow) HANDLE[m_ThreadCount];
@@ -128,6 +128,7 @@ DUPL_RETURN THREADMANAGER::Initialize(INT SingleOutput, UINT OutputCount, HANDLE
         m_ThreadData[i].OffsetX = DesktopDim->left;
         m_ThreadData[i].OffsetY = DesktopDim->top;
         m_ThreadData[i].PtrInfo = &m_PtrInfo;
+        m_ThreadData[i].TargetFPS = TargetFPS;
 
         RtlZeroMemory(&m_ThreadData[i].DxRes, sizeof(DX_RESOURCES));
         Ret = InitializeDx(&m_ThreadData[i].DxRes);
