@@ -375,6 +375,30 @@ void ClientLogic::RunLoop()
             {
                 pixelData.assign(uncompressedData.begin() + offset, uncompressedData.end());
 
+                // Expand BGR → BGRA (Alpha = 0xFF) if Alpha was stripped by the sender
+                if (header.PixelFormatFlags & 0x01)
+                {
+                    size_t totalPixels = 0;
+                    for (UINT ri = 0; ri < header.DirtyRectCount; ++ri)
+                    {
+                        UINT w = dirtyRects[ri].right  - dirtyRects[ri].left;
+                        UINT h = dirtyRects[ri].bottom - dirtyRects[ri].top;
+                        totalPixels += w * h;
+                    }
+                    std::vector<BYTE> bgraData(totalPixels * 4);
+                    size_t bgrOff = 0, bgraOff = 0;
+                    while (bgrOff + 3 <= pixelData.size())
+                    {
+                        bgraData[bgraOff]     = pixelData[bgrOff];
+                        bgraData[bgraOff + 1] = pixelData[bgrOff + 1];
+                        bgraData[bgraOff + 2] = pixelData[bgrOff + 2];
+                        bgraData[bgraOff + 3] = 0xFF;
+                        bgrOff  += 3;
+                        bgraOff += 4;
+                    }
+                    pixelData = std::move(bgraData);
+                }
+
                 // Ensure previous-frame buffer is sized for the full screen
                 size_t fullFrameSize = static_cast<size_t>(m_InitData.Width) * m_InitData.Height * 4;
                 if (m_PrevFrame.size() != fullFrameSize)
