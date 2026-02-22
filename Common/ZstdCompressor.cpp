@@ -8,7 +8,7 @@
 #include "ZstdCompressor.h"
 #include <zstd.h>
 
-ZstdCompressor::ZstdCompressor() : m_cctx(nullptr), m_dctx(nullptr)
+ZstdCompressor::ZstdCompressor() : m_cctx(nullptr), m_dctx(nullptr), m_compressLevel(1)
 {
 }
 
@@ -18,10 +18,11 @@ ZstdCompressor::~ZstdCompressor()
     if (m_dctx) ZSTD_freeDCtx(m_dctx);
 }
 
-bool ZstdCompressor::Initialize()
+bool ZstdCompressor::Initialize(unsigned int compressLevel)
 {
     m_cctx = ZSTD_createCCtx();
     m_dctx = ZSTD_createDCtx();
+	m_compressLevel = compressLevel;
     return m_cctx != nullptr && m_dctx != nullptr;
 }
 
@@ -32,7 +33,7 @@ bool ZstdCompressor::Compress(const void* src, size_t srcSize, std::vector<BYTE>
     size_t const cBuffSize = ZSTD_compressBound(srcSize);
     dst.resize(cBuffSize);
 
-    size_t const cSize = ZSTD_compressCCtx(m_cctx, dst.data(), cBuffSize, src, srcSize, 1); // Compression level 1 for speed
+    size_t const cSize = ZSTD_compressCCtx(m_cctx, dst.data(), cBuffSize, src, srcSize, m_compressLevel); // Compression level 1 for speed
     if (ZSTD_isError(cSize))
     {
         return false;

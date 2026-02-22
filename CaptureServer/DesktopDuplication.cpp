@@ -8,6 +8,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <limits.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 
 #include "DisplayManager.h"
 #include "DuplicationManager.h"
@@ -59,7 +61,7 @@ HRESULT EnumOutputsExpectedErrors[] = {
 // Forward Declarations
 //
 DWORD WINAPI DDProc(_In_ void* Param);
-bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS);
+bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS, UINT * CompressLevel);
 void ShowHelp();
 DUPL_RETURN GetOutputCountAndBounds(INT SingleOutput, _Out_ UINT* OutCount, _Out_ RECT* DeskBounds);
 
@@ -148,16 +150,20 @@ void DYNAMIC_WAIT::Wait()
 //
 int main()
 {
+    // Set system timer resolution to 1ms for accurate waits/sleeps
+    timeBeginPeriod(1);
+
     INT SingleOutput;
     INT ServerPort;
     UINT TargetFPS;
+    UINT CompressLevel = 1;
 
     // Synchronization
     HANDLE UnexpectedErrorEvent = nullptr;
     HANDLE ExpectedErrorEvent = nullptr;
     HANDLE TerminateThreadsEvent = nullptr;
 
-    bool CmdResult = ProcessCmdline(&SingleOutput, &ServerPort, &TargetFPS);
+    bool CmdResult = ProcessCmdline(&SingleOutput, &ServerPort, &TargetFPS, &CompressLevel);
     if (!CmdResult)
     {
         ShowHelp();
@@ -195,7 +201,7 @@ int main()
     }
 
     // Initialize Network Manager
-    if (!NetMgr.Initialize(ServerPort))
+    if (!NetMgr.Initialize(ServerPort, CompressLevel))
     {
         ProcessFailure(nullptr, L"Failed to initialize network manager", L"Error", E_FAIL);
         return 0;
@@ -305,6 +311,9 @@ int main()
     CloseHandle(ExpectedErrorEvent);
     CloseHandle(TerminateThreadsEvent);
 
+    // Restore system timer resolution
+    timeEndPeriod(1);
+
     return 0;
 }
 
@@ -320,7 +329,7 @@ void ShowHelp()
 //
 // Process command line parameters
 //
-bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS)
+bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS, UINT* CompressLevel)
 {
     *Output = -1;
     *Port = DEFAULT_SERVER_PORT;
@@ -376,6 +385,21 @@ bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS)
             }
             *TargetFPS = static_cast<UINT>(fps);
             continue;
+        }
+        else if ((strcmp(__argv[i], "-compress") == 0) ||
+            (strcmp(__argv[i], "/compress") == 0))
+        {
+            if (++i >= static_cast<UINT>(__argc))
+            {
+                return false;
+            }
+            int level = atoi(__argv[i]);
+            if (level < 0 || level > 9)
+            {
+                return false;
+            }
+            *CompressLevel = static_cast<UINT>(level);
+			continue;
         }
         else
         {
@@ -521,10 +545,12 @@ DWORD WINAPI DDProc(_In_ void* Param)
     LONGLONG frameIntervalTicks = (TData->TargetFPS > 0 && qpcFreq.QuadPart > 0)
         ? (qpcFreq.QuadPart / static_cast<LONGLONG>(TData->TargetFPS)) : 0LL;
 
+    printf("frameIntervalTicks %ld\n", frameIntervalTicks);
+
     UINT statsFrameCount = 0;
     ULONGLONG statsLastTick = GetTickCount64();
 
-    while ((WaitForSingleObjectEx(TData->TerminateThreadsEvent, 0, FALSE) == WAIT_TIMEOUT))
+    while ((WaitForSingleObjectEx(TData->TerminateThreadsEvent, 10, FALSE) == WAIT_TIMEOUT))
     {
         if (!WaitToProcessCurrentFrame)
         {
@@ -550,23 +576,30 @@ DWORD WINAPI DDProc(_In_ void* Param)
         WaitToProcessCurrentFrame = false;
 
         // Get mouse info
-        Ret = DuplMgr.GetMouse(TData->PtrInfo, &(CurrentData.FrameInfo), TData->OffsetX, TData->OffsetY);
-        if (Ret != DUPL_RETURN_SUCCESS)
-        {
-            DuplMgr.DoneWithFrame();
-            break;
-        }
+        //Ret = DuplMgr.GetMouse(TData->PtrInfo, &(CurrentData.FrameInfo), TData->OffsetX, TData->OffsetY);
+        //if (Ret != DUPL_RETURN_SUCCESS)
+        //{
+        //    DuplMgr.DoneWithFrame();
+        //    break;
+        //}
 
-        // FPS throttling: skip frame if target FPS is set and not enough time has elapsed
+        // Update FPS tracking and log stats every second
         if (frameIntervalTicks > 0)
         {
+            // 按理论间隔推进，保持长期平均帧率稳定
+            lastSentFrameTime.QuadPart += frameIntervalTicks;
+
+            // 如果落后太多（例如画面静止很久没更新），则重置为当前时间
             LARGE_INTEGER currentTime;
             QueryPerformanceCounter(&currentTime);
-            if ((currentTime.QuadPart - lastSentFrameTime.QuadPart) < frameIntervalTicks)
+            if (currentTime.QuadPart - lastSentFrameTime.QuadPart > frameIntervalTicks)
             {
-                DuplMgr.DoneWithFrame();
-                continue;
+                lastSentFrameTime.QuadPart = currentTime.QuadPart;
             }
+        }
+        else
+        {
+            QueryPerformanceCounter(&lastSentFrameTime);
         }
 
         // Process new frame and send over network

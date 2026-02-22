@@ -23,9 +23,9 @@ NetworkManager::~NetworkManager()
     }
 }
 
-bool NetworkManager::Initialize(int port)
+bool NetworkManager::Initialize(int port, unsigned int compressLevel)
 {
-    if (!m_Compressor.Initialize())
+    if (!m_Compressor.Initialize(compressLevel))
     {
         return false;
     }
@@ -137,6 +137,8 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     {
         return false;
     }
+
+    printf("uncompressedPayload Size %u, compressedData %u\n", uncompressedPayload.size(), compressedData.size());
 
     // Send Header
     PacketHeader header;

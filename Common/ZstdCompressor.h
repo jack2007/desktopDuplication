@@ -21,13 +21,14 @@ public:
     ZstdCompressor();
     ~ZstdCompressor();
 
-    bool Initialize();
+    bool Initialize(unsigned int compressLevel);
     bool Compress(const void* src, size_t srcSize, std::vector<BYTE>& dst);
     bool Decompress(const void* src, size_t srcSize, std::vector<BYTE>& dst, size_t uncompressedSize);
 
 private:
     ZSTD_CCtx* m_cctx;
     ZSTD_DCtx* m_dctx;
+	unsigned int m_compressLevel;
 };
 
 #endif
