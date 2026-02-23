@@ -27,6 +27,8 @@ struct PacketHeader
     UINT32 Type;
     UINT32 CompressedSize;
     UINT32 UncompressedSize;
+    UINT8  ProtocolVersion;    // 0 = legacy BGRA, 1 = supports PixelFormatFlags
+    UINT8  Reserved[3];        // alignment padding for future use
 };
 
 struct InitPacket
@@ -40,8 +42,10 @@ struct FramePacketHeader
 {
     UINT32 DirtyRectCount;
     UINT32 MoveRectCount;
-    bool HasPointerInfo;
-    bool IsDeltaEncoded;   // true: pixel data is XOR diff vs previous frame
+    bool   HasPointerInfo;
+    bool   IsDeltaEncoded;   // true: pixel data is XOR diff vs previous frame
+    UINT8  PixelFormatFlags; // BIT0 = 1: Alpha stripped, pixel data is BGR 3 bytes/pixel
+    UINT8  Reserved;         // alignment padding
     // Followed by:
     // RECT DirtyRects[DirtyRectCount]
     // DXGI_OUTDUPL_MOVE_RECT MoveRects[MoveRectCount]

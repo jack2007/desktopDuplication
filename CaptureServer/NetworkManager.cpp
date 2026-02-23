@@ -7,6 +7,7 @@
 
 #include "NetworkManager.h"
 #include <emmintrin.h>
+#include <tmmintrin.h>
 #include <cstring>
 #include <iostream>
 
@@ -63,6 +64,10 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     header.Type = PACKET_TYPE_INIT;
     header.CompressedSize = static_cast<UINT32>(compressedData.size());
     header.UncompressedSize = sizeof(initData);
+    header.ProtocolVersion = 1;
+    header.Reserved[0] = 0;
+    header.Reserved[1] = 0;
+    header.Reserved[2] = 0;
 
     if (!m_Server.SendData(&header, sizeof(header))) return false;
     return m_Server.SendData(compressedData.data(), compressedData.size());
@@ -79,6 +84,8 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     frameHeader.MoveRectCount = data->MoveCount;
     frameHeader.HasPointerInfo = (ptrInfo && ptrInfo->Visible);
     frameHeader.IsDeltaEncoded = !m_NeedsFullFrame;
+    frameHeader.PixelFormatFlags = 0x01; // Alpha stripped, pixel data is BGR 3 bytes/pixel
+    frameHeader.Reserved = 0;
 
     RECT fullScreenRect = { 0, 0, static_cast<LONG>(m_ScreenWidth), static_cast<LONG>(m_ScreenHeight) };
     RECT* dirtyRects = nullptr;
@@ -151,6 +158,10 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     header.Type = PACKET_TYPE_FRAME;
     header.CompressedSize = static_cast<UINT32>(compressedData.size());
     header.UncompressedSize = static_cast<UINT32>(uncompressedPayload.size());
+    header.ProtocolVersion = 1;
+    header.Reserved[0] = 0;
+    header.Reserved[1] = 0;
+    header.Reserved[2] = 0;
 
     if (!m_Server.SendData(&header, sizeof(header))) return false;
 
@@ -207,14 +218,14 @@ bool NetworkManager::ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device
     HRESULT hr = context->Map(m_StagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) return false;
 
-    // Calculate total size needed for pixels
+    // Calculate total size needed for pixels (BGR: 3 bytes/pixel)
     size_t totalPixelSize = 0;
-    UINT bytesPerPixel = 4; // Assuming DXGI_FORMAT_B8G8R8A8_UNORM
+    UINT bytesPerPixel = 4; // Assuming DXGI_FORMAT_B8G8R8A8_UNORM (internal BGRA)
     for (UINT i = 0; i < dirtyCount; ++i)
     {
         UINT width = dirtyRects[i].right - dirtyRects[i].left;
         UINT height = dirtyRects[i].bottom - dirtyRects[i].top;
-        totalPixelSize += width * height * bytesPerPixel;
+        totalPixelSize += width * height * 3; // BGR output: 3 bytes/pixel
     }
 
     // Ensure previous-frame buffer is sized for the full screen
@@ -227,12 +238,23 @@ bool NetworkManager::ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device
     outPixels.resize(totalPixelSize);
     size_t outOffset = 0;
 
-    // Copy dirty pixels with SSE2 XOR delta encoding
+    // SSSE3 shuffle mask: extract BGR bytes from 4 packed BGRA pixels (16 bytes → 12 bytes)
+    // Input layout:  B0 G0 R0 A0  B1 G1 R1 A1  B2 G2 R2 A2  B3 G3 R3 A3
+    // Output layout: B0 G0 R0     B1 G1 R1     B2 G2 R2     B3 G3 R3  (+ 4 don't-care bytes)
+    static const __m128i bgra_to_bgr_mask = _mm_set_epi8(
+        (char)0x80, (char)0x80, (char)0x80, (char)0x80,  // bytes 15-12: zeroed (don't care)
+        14, 13, 12,   // B3 G3 R3
+        10,  9,  8,   // B2 G2 R2
+         6,  5,  4,   // B1 G1 R1
+         2,  1,  0    // B0 G0 R0
+    );
+
+    // Copy dirty pixels: SSE2 XOR delta on BGRA, then SSSE3 Alpha strip to BGR output
     for (UINT i = 0; i < dirtyCount; ++i)
     {
         UINT width = dirtyRects[i].right - dirtyRects[i].left;
         UINT height = dirtyRects[i].bottom - dirtyRects[i].top;
-        UINT rowBytes = width * bytesPerPixel;
+        UINT rowBytes = width * bytesPerPixel; // BGRA row width in bytes
 
         for (UINT y = 0; y < height; ++y)
         {
@@ -243,23 +265,33 @@ bool NetworkManager::ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device
                             + ((dirtyRects[i].top + y) * m_ScreenWidth + dirtyRects[i].left) * bytesPerPixel;
             BYTE* dstRow = outPixels.data() + outOffset;
 
-            UINT x = 0;
-            // Process 16 bytes at a time using SSE2
-            for (; x + 16 <= rowBytes; x += 16)
+            UINT x = 0;    // BGRA source byte index
+            UINT bgrX = 0; // BGR destination byte index
+
+            // Process 4 BGRA pixels (16 bytes) → 12 BGR bytes at a time using SSSE3
+            for (; x + 16 <= rowBytes; x += 16, bgrX += 12)
             {
-                __m128i cur  = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcRow  + x));
-                __m128i prev = _mm_loadu_si128(reinterpret_cast<const __m128i*>(prevRow + x));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dstRow + x), _mm_xor_si128(cur, prev));
+                __m128i cur   = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcRow  + x));
+                __m128i prev  = _mm_loadu_si128(reinterpret_cast<const __m128i*>(prevRow + x));
+                __m128i xored = _mm_xor_si128(cur, prev);
                 _mm_storeu_si128(reinterpret_cast<__m128i*>(prevRow + x), cur);
+                // Strip Alpha: shuffle XOR result (BGRA) → BGR (12 bytes + 4 zeroed)
+                __m128i bgr = _mm_shuffle_epi8(xored, bgra_to_bgr_mask);
+                memcpy(dstRow + bgrX, &bgr, 12);
             }
-            // Handle remaining bytes
-            for (; x < rowBytes; ++x)
+            // Scalar fallback for remaining pixels (< 4 pixels)
+            for (; x < rowBytes; x += 4, bgrX += 3)
             {
-                dstRow[x] = srcRow[x] ^ prevRow[x];
-                prevRow[x] = srcRow[x];
+                dstRow[bgrX]     = srcRow[x]     ^ prevRow[x];
+                dstRow[bgrX + 1] = srcRow[x + 1] ^ prevRow[x + 1];
+                dstRow[bgrX + 2] = srcRow[x + 2] ^ prevRow[x + 2];
+                prevRow[x]     = srcRow[x];
+                prevRow[x + 1] = srcRow[x + 1];
+                prevRow[x + 2] = srcRow[x + 2];
+                prevRow[x + 3] = srcRow[x + 3];
             }
 
-            outOffset += rowBytes;
+            outOffset += width * 3; // BGR: 3 bytes/pixel
         }
     }
 
