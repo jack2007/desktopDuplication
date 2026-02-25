@@ -318,6 +318,41 @@ bool ProcessCmdline(_Out_ INT* Output, _Out_writes_(SERVER_IP_BUFFER_SIZE) char*
     return true;
 }
 
+static WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
+
+void ToggleFullscreen(HWND hWnd, bool enterFullscreen)
+{
+    DWORD dwStyle = GetWindowLong(hWnd, GWL_STYLE);
+    if (enterFullscreen)
+    {
+        if (dwStyle & WS_OVERLAPPEDWINDOW)
+        {
+            MONITORINFO mi = { sizeof(mi) };
+            if (GetWindowPlacement(hWnd, &g_wpPrev) &&
+                GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi))
+            {
+                SetWindowLong(hWnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+                SetWindowPos(hWnd, HWND_TOP,
+                             mi.rcMonitor.left, mi.rcMonitor.top,
+                             mi.rcMonitor.right - mi.rcMonitor.left,
+                             mi.rcMonitor.bottom - mi.rcMonitor.top,
+                             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            }
+        }
+    }
+    else
+    {
+        if (!(dwStyle & WS_OVERLAPPEDWINDOW))
+        {
+            SetWindowLong(hWnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+            SetWindowPlacement(hWnd, &g_wpPrev);
+            SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+}
+
 //
 // Window message processor
 //
@@ -334,6 +369,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             // Tell output manager that window size has changed
             g_ClientLogic.WindowResize();
+            break;
+        }
+        case WM_KEYDOWN:
+        {
+            if (wParam == 'P') // Ctrl + Shift + P
+            {
+                if ((GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
+                {
+                    ToggleFullscreen(hWnd, true);
+                }
+            }
+            else if (wParam == 'L') // Ctrl + Shift + L
+            {
+                if ((GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
+                {
+                    ToggleFullscreen(hWnd, false);
+                }
+            }
             break;
         }
         default:
