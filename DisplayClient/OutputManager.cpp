@@ -696,18 +696,49 @@ DUPL_RETURN OUTPUTMANAGER::DrawMouse(_In_ PTR_INFO* PtrInfo)
 
         case DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME:
         {
-            ProcessMonoMask(true, PtrInfo, &PtrWidth, &PtrHeight, &PtrLeft, &PtrTop, &InitBuffer, &Box);
+            DUPL_RETURN Ret = ProcessMonoMask(true, PtrInfo, &PtrWidth, &PtrHeight, &PtrLeft, &PtrTop, &InitBuffer, &Box);
+            if (Ret != DUPL_RETURN_SUCCESS)
+            {
+                if (InitBuffer)
+                {
+                    delete [] InitBuffer;
+                    InitBuffer = nullptr;
+                }
+                return Ret;
+            }
             break;
         }
 
         case DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR:
         {
-            ProcessMonoMask(false, PtrInfo, &PtrWidth, &PtrHeight, &PtrLeft, &PtrTop, &InitBuffer, &Box);
+            DUPL_RETURN Ret = ProcessMonoMask(false, PtrInfo, &PtrWidth, &PtrHeight, &PtrLeft, &PtrTop, &InitBuffer, &Box);
+            if (Ret != DUPL_RETURN_SUCCESS)
+            {
+                if (InitBuffer)
+                {
+                    delete [] InitBuffer;
+                    InitBuffer = nullptr;
+                }
+                return Ret;
+            }
             break;
         }
 
         default:
             break;
+    }
+
+    // Guard against invalid cursor dimensions (e.g. unknown cursor type)
+    if (PtrWidth <= 0 || PtrHeight <= 0)
+    {
+        return DUPL_RETURN_SUCCESS;
+    }
+
+    // Guard against null pixel data
+    const void* pSysMem = (PtrInfo->ShapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR) ? PtrInfo->PtrShapeBuffer : InitBuffer;
+    if (!pSysMem)
+    {
+        return DUPL_RETURN_SUCCESS;
     }
 
     // VERTEX creation
@@ -729,7 +760,7 @@ DUPL_RETURN OUTPUTMANAGER::DrawMouse(_In_ PTR_INFO* PtrInfo)
     Desc.Height = PtrHeight;
 
     // Set up init data
-    InitData.pSysMem = (PtrInfo->ShapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR) ? PtrInfo->PtrShapeBuffer : InitBuffer;
+    InitData.pSysMem = pSysMem;
     InitData.SysMemPitch = (PtrInfo->ShapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR) ? PtrInfo->ShapeInfo.Pitch : PtrWidth * BPP;
     InitData.SysMemSlicePitch = 0;
 
@@ -894,6 +925,11 @@ void OUTPUTMANAGER::SetViewPort(UINT Width, UINT Height)
 //
 DUPL_RETURN OUTPUTMANAGER::ResizeSwapChain()
 {
+    // Unbind the render target from the device context before releasing it.
+    // ResizeBuffers requires all outstanding references to the swap chain back
+    // buffer to be released; the device context holds one via OMSetRenderTargets.
+    m_DeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+
     if (m_RTV)
     {
         m_RTV->Release();
