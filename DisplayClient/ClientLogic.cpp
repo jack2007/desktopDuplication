@@ -13,7 +13,7 @@
 #include "VertexShader.h"
 #include "PixelShader.h"
 
-ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(false), m_FrameCount(0), m_LastFPSTick(0), m_ServerPort(0)
+ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(false), m_FrameCount(0), m_LastFPSTick(0), m_ServerPort(0), m_LastMouseSendTick(0)
 {
     RtlZeroMemory(&m_DxRes, sizeof(m_DxRes));
     RtlZeroMemory(&m_InitData, sizeof(m_InitData));
@@ -288,6 +288,124 @@ bool ClientLogic::UpdateLocalTexture(const std::vector<BYTE>& pixelData, const R
     return true;
 }
 
+void ClientLogic::MapClientToServer(int clientX, int clientY, INT32& serverX, INT32& serverY)
+{
+    RECT clientRect = {};
+    GetClientRect(m_WindowHandle, &clientRect);
+    int clientWidth  = clientRect.right  - clientRect.left;
+    int clientHeight = clientRect.bottom - clientRect.top;
+
+    if (clientWidth <= 0 || clientHeight <= 0 || m_InitData.Width == 0 || m_InitData.Height == 0)
+    {
+        serverX = 0;
+        serverY = 0;
+        return;
+    }
+
+    serverX = static_cast<INT32>(static_cast<long long>(clientX) * m_InitData.Width  / clientWidth);
+    serverY = static_cast<INT32>(static_cast<long long>(clientY) * m_InitData.Height / clientHeight);
+
+    serverX = max(0, min(serverX, static_cast<INT32>(m_InitData.Width)  - 1));
+    serverY = max(0, min(serverY, static_cast<INT32>(m_InitData.Height) - 1));
+}
+
+void ClientLogic::ProcessCursorShape(const CursorShapePacket& packet, const std::vector<BYTE>& shapeData)
+{
+    if (packet.ShapeBufferSize > 0 && !shapeData.empty())
+    {
+        m_PtrInfo.ShapeInfo.Type        = packet.Type;
+        m_PtrInfo.ShapeInfo.Width       = packet.Width;
+        m_PtrInfo.ShapeInfo.Height      = packet.Height;
+        m_PtrInfo.ShapeInfo.Pitch       = packet.Pitch;
+        m_PtrInfo.ShapeInfo.HotSpot.x   = packet.HotspotX;
+        m_PtrInfo.ShapeInfo.HotSpot.y   = packet.HotspotY;
+        m_PtrInfo.Visible = true;
+
+        if (m_PtrInfo.BufferSize < packet.ShapeBufferSize)
+        {
+            if (m_PtrInfo.PtrShapeBuffer) delete[] m_PtrInfo.PtrShapeBuffer;
+            m_PtrInfo.PtrShapeBuffer = new BYTE[packet.ShapeBufferSize];
+            m_PtrInfo.BufferSize = packet.ShapeBufferSize;
+        }
+        memcpy(m_PtrInfo.PtrShapeBuffer, shapeData.data(), packet.ShapeBufferSize);
+
+        // Cache the cursor shape by ID
+        CachedCursor cached;
+        cached.ShapeInfo = m_PtrInfo.ShapeInfo;
+        cached.ShapeBuffer.assign(shapeData.begin(), shapeData.begin() + packet.ShapeBufferSize);
+        m_CursorCache[packet.CursorId] = std::move(cached);
+    }
+    else if (packet.ShapeBufferSize == 0)
+    {
+        // Look up cached shape by cursor ID
+        auto it = m_CursorCache.find(packet.CursorId);
+        if (it != m_CursorCache.end())
+        {
+            m_PtrInfo.ShapeInfo = it->second.ShapeInfo;
+            UINT32 bufSize = static_cast<UINT32>(it->second.ShapeBuffer.size());
+            if (m_PtrInfo.BufferSize < bufSize)
+            {
+                if (m_PtrInfo.PtrShapeBuffer) delete[] m_PtrInfo.PtrShapeBuffer;
+                m_PtrInfo.PtrShapeBuffer = new BYTE[bufSize];
+                m_PtrInfo.BufferSize = bufSize;
+            }
+            memcpy(m_PtrInfo.PtrShapeBuffer, it->second.ShapeBuffer.data(), bufSize);
+        }
+    }
+}
+
+void ClientLogic::OnMouseMove(int clientX, int clientY)
+{
+    INT32 serverX, serverY;
+    MapClientToServer(clientX, clientY, serverX, serverY);
+
+    // Update local cursor position immediately for zero-latency display
+    if (m_PtrInfo.PtrShapeBuffer != nullptr)
+    {
+        m_PtrInfo.Position.x = serverX - m_PtrInfo.ShapeInfo.HotSpot.x;
+        m_PtrInfo.Position.y = serverY - m_PtrInfo.ShapeInfo.HotSpot.y;
+        m_PtrInfo.Visible = true;
+    }
+
+    // Throttle sends to ~125 Hz (every 8ms)
+    DWORD now = GetTickCount();
+    if (now - m_LastMouseSendTick < 8) return;
+    m_LastMouseSendTick = now;
+
+    MouseInputPacket input;
+    input.InputType  = static_cast<UINT8>(MOUSE_INPUT_MOVE);
+    input.X          = serverX;
+    input.Y          = serverY;
+    input.WheelDelta = 0;
+    m_NetClient.SendMouseInput(input);
+}
+
+void ClientLogic::OnMouseButton(MouseInputType type, int clientX, int clientY)
+{
+    INT32 serverX, serverY;
+    MapClientToServer(clientX, clientY, serverX, serverY);
+
+    MouseInputPacket input;
+    input.InputType  = static_cast<UINT8>(type);
+    input.X          = serverX;
+    input.Y          = serverY;
+    input.WheelDelta = 0;
+    m_NetClient.SendMouseInput(input);
+}
+
+void ClientLogic::OnMouseWheel(int delta, int clientX, int clientY)
+{
+    INT32 serverX, serverY;
+    MapClientToServer(clientX, clientY, serverX, serverY);
+
+    MouseInputPacket input;
+    input.InputType  = static_cast<UINT8>(MOUSE_INPUT_WHEEL);
+    input.X          = serverX;
+    input.Y          = serverY;
+    input.WheelDelta = delta;
+    m_NetClient.SendMouseInput(input);
+}
+
 void ClientLogic::RunLoop()
 {
     MSG msg = { 0 };
@@ -316,9 +434,31 @@ void ClientLogic::RunLoop()
             continue;
         }
 
+        PacketHeader pktHeader;
+        if (!m_NetClient.ReceivePacketHeader(pktHeader))
+        {
+            break; // Connection closed or error
+        }
+
+        if (pktHeader.Type == PACKET_TYPE_CURSOR_SHAPE)
+        {
+            CursorShapePacket cursorPacket;
+            std::vector<BYTE> shapeData;
+            if (m_NetClient.ReceiveCursorShapeBody(pktHeader, cursorPacket, shapeData))
+            {
+                ProcessCursorShape(cursorPacket, shapeData);
+            }
+            continue;
+        }
+
+        if (pktHeader.Type != PACKET_TYPE_FRAME)
+        {
+            break; // Unknown packet type
+        }
+
         std::vector<BYTE> uncompressedData;
         FramePacketHeader header;
-        if (!m_NetClient.ReceiveFramePacket(uncompressedData, header))
+        if (!m_NetClient.ReceiveFramePacketBody(pktHeader, uncompressedData, header))
         {
             break; // Connection closed or error
         }

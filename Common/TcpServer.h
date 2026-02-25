@@ -24,6 +24,7 @@ public:
     bool WaitForClient();
     bool SendData(const void* data, size_t size);
     bool ReceiveData(void* buffer, size_t size);
+    bool HasData();
     bool IsConnected() const { return m_ClientSocket != INVALID_SOCKET; }
     void Disconnect();
 

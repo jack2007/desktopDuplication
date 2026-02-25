@@ -568,6 +568,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
             if (TimeOut)
             {
                 // No new frame at the moment
+                NetMgr.ProcessPendingMouseInput();
                 continue;
             }
         }
@@ -630,6 +631,9 @@ DWORD WINAPI DDProc(_In_ void* Param)
         {
             break;
         }
+
+        // Check for mouse input from client (non-blocking)
+        NetMgr.ProcessPendingMouseInput();
     }
 
 Exit:

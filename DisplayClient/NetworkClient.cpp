@@ -85,3 +85,61 @@ void NetworkClient::Disconnect()
 {
     m_Client.Disconnect();
 }
+
+bool NetworkClient::SendMouseInput(const MouseInputPacket& input)
+{
+    PacketHeader header;
+    header.MagicNumber      = PACKET_MAGIC_NUMBER;
+    header.Type             = PACKET_TYPE_MOUSE_INPUT;
+    header.CompressedSize   = sizeof(MouseInputPacket);
+    header.UncompressedSize = sizeof(MouseInputPacket);
+    header.ProtocolVersion  = 1;
+    header.Reserved[0]      = 0;
+    header.Reserved[1]      = 0;
+    header.Reserved[2]      = 0;
+
+    if (!m_Client.SendData(&header, sizeof(header))) return false;
+    return m_Client.SendData(&input, sizeof(input));
+}
+
+bool NetworkClient::ReceivePacketHeader(PacketHeader& outHeader)
+{
+    if (!m_Client.ReceiveData(&outHeader, sizeof(outHeader))) return false;
+    return outHeader.MagicNumber == PACKET_MAGIC_NUMBER;
+}
+
+bool NetworkClient::ReceiveFramePacketBody(const PacketHeader& header, std::vector<BYTE>& outUncompressedData, FramePacketHeader& outFrameHeader)
+{
+    if (header.Type != PACKET_TYPE_FRAME) return false;
+
+    std::vector<BYTE> compressedData(header.CompressedSize);
+    if (!m_Client.ReceiveData(compressedData.data(), header.CompressedSize)) return false;
+
+    if (!m_Compressor.Decompress(compressedData.data(), header.CompressedSize, outUncompressedData, header.UncompressedSize))
+        return false;
+
+    if (outUncompressedData.size() < sizeof(FramePacketHeader)) return false;
+
+    memcpy(&outFrameHeader, outUncompressedData.data(), sizeof(FramePacketHeader));
+    return true;
+}
+
+bool NetworkClient::ReceiveCursorShapeBody(const PacketHeader& header, CursorShapePacket& outPacket, std::vector<BYTE>& outShapeData)
+{
+    if (header.Type != PACKET_TYPE_CURSOR_SHAPE) return false;
+    if (header.CompressedSize < sizeof(CursorShapePacket)) return false;
+
+    if (!m_Client.ReceiveData(&outPacket, sizeof(CursorShapePacket))) return false;
+
+    if (outPacket.ShapeBufferSize > 0)
+    {
+        outShapeData.resize(outPacket.ShapeBufferSize);
+        if (!m_Client.ReceiveData(outShapeData.data(), outPacket.ShapeBufferSize)) return false;
+    }
+    else
+    {
+        outShapeData.clear();
+    }
+
+    return true;
+}

@@ -12,6 +12,7 @@
 #include "../Common/ZstdCompressor.h"
 #include "../Common/NetworkProtocol.h"
 #include "CommonTypes.h"
+#include "MouseController.h"
 #include <vector>
 
 class NetworkManager
@@ -27,11 +28,17 @@ public:
     bool IsConnected();
     void Disconnect();
 
+    bool HasClientData();
+    bool ReceiveMouseInput(MouseInputPacket& outInput);
+    bool SendCursorShape(const CursorShapePacket& packet, const std::vector<BYTE>& shapeData);
+    void ProcessPendingMouseInput();
+
 private:
     bool ReadPixelsFromGPU(ID3D11Texture2D* srcTexture, ID3D11Device* device, ID3D11DeviceContext* context, const RECT* dirtyRects, UINT dirtyCount, std::vector<BYTE>& outPixels);
 
-    TcpServer m_Server;
+    TcpServer      m_Server;
     ZstdCompressor m_Compressor;
+    MouseController m_MouseController;
     ID3D11Texture2D* m_StagingTexture;
     D3D11_TEXTURE2D_DESC m_StagingDesc;
     bool m_NeedsFullFrame;

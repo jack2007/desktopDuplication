@@ -26,6 +26,7 @@ add_executable(CaptureServer
     CaptureServer/OutputManager.cpp
     CaptureServer/ThreadManager.cpp
     CaptureServer/NetworkManager.cpp
+    CaptureServer/MouseController.cpp
 )
 target_link_libraries(CaptureServer PRIVATE Common d3d11 dxgi)
 
