@@ -23,9 +23,9 @@ void MouseController::ProcessMouseInput(const MouseInputPacket& input)
 {
     if (m_ScreenWidth == 0 || m_ScreenHeight == 0) return;
 
-    // Convert screen coordinates to absolute SendInput coordinates (0-65536 range)
-    LONG absX = static_cast<LONG>(static_cast<long long>(input.X) * 65536 / static_cast<long long>(m_ScreenWidth));
-    LONG absY = static_cast<LONG>(static_cast<long long>(input.Y) * 65536 / static_cast<long long>(m_ScreenHeight));
+    // Convert screen coordinates to absolute SendInput coordinates (0-65535 range, inclusive)
+    LONG absX = static_cast<LONG>(static_cast<long long>(input.X) * 65535 / static_cast<long long>(m_ScreenWidth - 1));
+    LONG absY = static_cast<LONG>(static_cast<long long>(input.Y) * 65535 / static_cast<long long>(m_ScreenHeight - 1));
 
     INPUT inp = {};
     inp.type = INPUT_MOUSE;

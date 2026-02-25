@@ -368,17 +368,22 @@ bool NetworkManager::SendCursorShape(const CursorShapePacket& packet, const std:
 
 void NetworkManager::ProcessPendingMouseInput()
 {
-    if (!m_Server.HasData()) return;
-
-    MouseInputPacket input;
-    if (!ReceiveMouseInput(input)) return;
-
-    m_MouseController.ProcessMouseInput(input);
-
-    CursorShapePacket cursorPacket;
-    std::vector<BYTE> shapeData;
-    if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+    int processed = 0;
+    while (m_Server.HasData())
     {
-        SendCursorShape(cursorPacket, shapeData);
+        MouseInputPacket input;
+        if (!ReceiveMouseInput(input)) break;
+        m_MouseController.ProcessMouseInput(input);
+        processed++;
+    }
+
+    if (processed > 0)
+    {
+        CursorShapePacket cursorPacket;
+        std::vector<BYTE> shapeData;
+        if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+        {
+            SendCursorShape(cursorPacket, shapeData);
+        }
     }
 }

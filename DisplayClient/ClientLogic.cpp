@@ -58,6 +58,7 @@ void ClientLogic::Clean()
     m_PtrInfo.Visible = false;
     m_PtrInfo.BufferSize = 0;
     m_CursorCache.clear();
+    m_LastMouseSendTick = 0;
 
     CleanDx();
 }
@@ -373,6 +374,20 @@ void ClientLogic::OnMouseMove(int clientX, int clientY)
     // Always update position for zero-latency display (Visible is set by ProcessCursorShape)
     m_PtrInfo.Position.x = serverX - m_PtrInfo.ShapeInfo.HotSpot.x;
     m_PtrInfo.Position.y = serverY - m_PtrInfo.ShapeInfo.HotSpot.y;
+
+    // Immediately re-render the cursor at the new position without waiting for the
+    // next server packet.  Use a non-blocking acquire (timeout=0): if the mutex is
+    // free we do a lightweight release(key=1) + UpdateApplicationWindow cycle; if
+    // it is busy the cursor will be drawn on the next regular frame render.
+    if (m_PtrInfo.Visible && !m_Occluded && m_KeyMutex)
+    {
+        HRESULT hr = m_KeyMutex->AcquireSync(0, 0);
+        if (SUCCEEDED(hr))
+        {
+            m_KeyMutex->ReleaseSync(1);
+            m_OutMgr.UpdateApplicationWindow(&m_PtrInfo, &m_Occluded);
+        }
+    }
 
     // Throttle sends to ~125 Hz (every 8ms)
     DWORD now = GetTickCount();
