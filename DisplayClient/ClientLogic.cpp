@@ -367,6 +367,17 @@ void ClientLogic::OnMouseMove(int clientX, int clientY)
     m_PtrInfo.Position.x = serverX - m_PtrInfo.ShapeInfo.HotSpot.x;
     m_PtrInfo.Position.y = serverY - m_PtrInfo.ShapeInfo.HotSpot.y;
 
+    // Re-render cursor immediately so it tracks the mouse without waiting for server round-trip
+    if (!m_Occluded && m_PtrInfo.Visible && m_KeyMutex)
+    {
+        HRESULT hr = m_KeyMutex->AcquireSync(0, 0);
+        if (SUCCEEDED(hr))
+        {
+            m_KeyMutex->ReleaseSync(1);
+            m_OutMgr.UpdateApplicationWindow(&m_PtrInfo, &m_Occluded);
+        }
+    }
+
     // Throttle sends to ~125 Hz (every 8ms)
     DWORD now = GetTickCount();
     if (now - m_LastMouseSendTick < 8) return;
