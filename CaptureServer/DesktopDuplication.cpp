@@ -611,7 +611,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
         // We have a new frame so try and process it
         WaitToProcessCurrentFrame = false;
 
-        // Get mouse info
+        //// Get mouse info
         //Ret = DuplMgr.GetMouse(TData->PtrInfo, &(CurrentData.FrameInfo), TData->OffsetX, TData->OffsetY);
         //if (Ret != DUPL_RETURN_SUCCESS)
         //{

@@ -514,29 +514,29 @@ void ClientLogic::RunLoop()
                 offset += header.MoveRectCount * sizeof(DXGI_OUTDUPL_MOVE_RECT);
             }
 
-            if (header.HasPointerInfo)
-            {
-                PTR_INFO* ptrInfo = reinterpret_cast<PTR_INFO*>(uncompressedData.data() + offset);
-                offset += sizeof(PTR_INFO);
+            //if (header.HasPointerInfo)
+            //{
+            //    PTR_INFO* ptrInfo = reinterpret_cast<PTR_INFO*>(uncompressedData.data() + offset);
+            //    offset += sizeof(PTR_INFO);
 
-                m_PtrInfo.Position = ptrInfo->Position;
-                m_PtrInfo.Visible = ptrInfo->Visible;
-                m_PtrInfo.WhoUpdatedPositionLast = ptrInfo->WhoUpdatedPositionLast;
-                m_PtrInfo.LastTimeStamp = ptrInfo->LastTimeStamp;
+            //    m_PtrInfo.Position = ptrInfo->Position;
+            //    m_PtrInfo.Visible = ptrInfo->Visible;
+            //    m_PtrInfo.WhoUpdatedPositionLast = ptrInfo->WhoUpdatedPositionLast;
+            //    m_PtrInfo.LastTimeStamp = ptrInfo->LastTimeStamp;
 
-                if (ptrInfo->BufferSize > 0)
-                {
-                    if (m_PtrInfo.BufferSize < ptrInfo->BufferSize)
-                    {
-                        if (m_PtrInfo.PtrShapeBuffer) delete[] m_PtrInfo.PtrShapeBuffer;
-                        m_PtrInfo.PtrShapeBuffer = new BYTE[ptrInfo->BufferSize];
-                        m_PtrInfo.BufferSize = ptrInfo->BufferSize;
-                    }
-                    m_PtrInfo.ShapeInfo = ptrInfo->ShapeInfo;
-                    memcpy(m_PtrInfo.PtrShapeBuffer, uncompressedData.data() + offset, ptrInfo->BufferSize);
-                    offset += ptrInfo->BufferSize;
-                }
-            }
+            //    if (ptrInfo->BufferSize > 0)
+            //    {
+            //        if (m_PtrInfo.BufferSize < ptrInfo->BufferSize)
+            //        {
+            //            if (m_PtrInfo.PtrShapeBuffer) delete[] m_PtrInfo.PtrShapeBuffer;
+            //            m_PtrInfo.PtrShapeBuffer = new BYTE[ptrInfo->BufferSize];
+            //            m_PtrInfo.BufferSize = ptrInfo->BufferSize;
+            //        }
+            //        m_PtrInfo.ShapeInfo = ptrInfo->ShapeInfo;
+            //        memcpy(m_PtrInfo.PtrShapeBuffer, uncompressedData.data() + offset, ptrInfo->BufferSize);
+            //        offset += ptrInfo->BufferSize;
+            //    }
+            //}
 
             std::vector<BYTE> pixelData;
             if (header.DirtyRectCount > 0 && offset < uncompressedData.size())
