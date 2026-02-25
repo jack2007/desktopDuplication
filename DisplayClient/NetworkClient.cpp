@@ -19,7 +19,7 @@ NetworkClient::~NetworkClient()
 
 bool NetworkClient::Initialize(const char* ipAddress, int port)
 {
-    if (!m_Compressor.Initialize())
+    if (!m_Compressor.Initialize(1))
     {
         ProcessFailure(nullptr, L"m_Compressor.Initialize Failed", L"Error", E_FAIL);
         return false;
