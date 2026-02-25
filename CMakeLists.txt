@@ -5,10 +5,18 @@
 cmake_minimum_required(VERSION 3.15)
 project(DesktopDuplication)
 
+if(MSVC)
+    # 添加编译选项到所有目标
+    add_compile_options(/utf-8)
+    
+    # 可选：同时设置字符集为 Unicode（等价于 VS 里的“使用 Unicode 字符集”）
+    add_definitions(-DUNICODE -D_UNICODE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(zstd CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
+#find_package(spdlog CONFIG REQUIRED)
 
 # Common Library
 add_library(Common STATIC
@@ -16,7 +24,8 @@ add_library(Common STATIC
     Common/TcpClient.cpp
     Common/ZstdCompressor.cpp
 )
-target_link_libraries(Common PUBLIC zstd::libzstd ws2_32 spdlog::spdlog)
+#target_link_libraries(Common PUBLIC zstd::libzstd ws2_32 spdlog::spdlog)
+target_link_libraries(Common PUBLIC zstd::libzstd ws2_32)
 target_include_directories(Common PUBLIC Common)
 
 # Capture Server
