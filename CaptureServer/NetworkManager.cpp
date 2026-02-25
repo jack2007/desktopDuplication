@@ -165,7 +165,7 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
         return false;
     }
 
-    printf("uncompressedPayload Size %u, compressedData %u\n", uncompressedPayload.size(), compressedData.size());
+    //printf("uncompressedPayload Size %u, compressedData %u\n", uncompressedPayload.size(), compressedData.size());
 
     LOG_DEBUG("NetworkManager::SendFramePacket uncompressedSize={}, compressedSize={}, dirtyRects={}, moveRects={}",
               uncompressedPayload.size(), compressedData.size(),

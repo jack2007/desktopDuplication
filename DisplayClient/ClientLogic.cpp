@@ -466,7 +466,7 @@ void ClientLogic::RunLoop()
 
         if (pktHeader.Type == PACKET_TYPE_CURSOR_SHAPE)
         {
-            LOG_TRACE("ClientLogic::RunLoop: received CURSOR_SHAPE packet");
+            LOG_DEBUG("ClientLogic::RunLoop: received CURSOR_SHAPE packet");
             CursorShapePacket cursorPacket;
             std::vector<BYTE> shapeData;
             if (m_NetClient.ReceiveCursorShapeBody(pktHeader, cursorPacket, shapeData))
@@ -484,6 +484,7 @@ void ClientLogic::RunLoop()
                 {
                     m_KeyMutex->ReleaseSync(1);
                     m_OutMgr.UpdateApplicationWindow(&m_PtrInfo, &m_Occluded);
+                    LOG_DEBUG("ClientLogic::RunLoop: UpdateApplicationWindow");
                 }
             }
             continue;

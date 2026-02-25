@@ -8,6 +8,7 @@
 #include "OutputManager.h"
 #include "VertexShader.h"
 #include "PixelShader.h"
+#include "Logger.h"
 using namespace DirectX;
 
 //
@@ -271,6 +272,7 @@ DUPL_RETURN OUTPUTMANAGER::UpdateApplicationWindow(_In_ PTR_INFO* PointerInfo, _
     // This routine is the part of the sample that displays the desktop image onto the display
 
     // Try and acquire sync on common display buffer
+
     HRESULT hr = m_KeyMutex->AcquireSync(1, 100);
     if (hr == static_cast<HRESULT>(WAIT_TIMEOUT))
     {
@@ -293,6 +295,7 @@ DUPL_RETURN OUTPUTMANAGER::UpdateApplicationWindow(_In_ PTR_INFO* PointerInfo, _
             Ret = DrawMouse(PointerInfo);
         }
     }
+
 
     // Release keyed mutex
     hr = m_KeyMutex->ReleaseSync(0);
