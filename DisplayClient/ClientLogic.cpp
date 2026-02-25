@@ -8,6 +8,7 @@
 #include "ClientLogic.h"
 #include <emmintrin.h>
 #include <iostream>
+#include "Logger.h"
 
 // Include shaders only once in the cpp file that needs them
 #include "VertexShader.h"
@@ -197,19 +198,24 @@ DUPL_RETURN ClientLogic::InitializeDx()
 
 DUPL_RETURN ClientLogic::Initialize(HWND windowHandle, const char* serverIP, int port)
 {
+    LOG_INFO("ClientLogic::Initialize server={}:{}", serverIP ? serverIP : "(null)", port);
     m_WindowHandle = windowHandle;
     m_ServerIP = serverIP ? serverIP : "127.0.0.1";
     m_ServerPort = port;
 
     if (!m_NetClient.Initialize(m_ServerIP.c_str(), m_ServerPort))
     {
+        LOG_ERROR("ClientLogic::Initialize: failed to connect to server {}:{}", m_ServerIP, m_ServerPort);
         return ProcessFailure(nullptr, L"Failed to connect to server", L"Error", E_FAIL);
     }
 
     if (!m_NetClient.ReceiveInitPacket(m_InitData))
     {
+        LOG_ERROR("ClientLogic::Initialize: failed to receive init packet");
         return ProcessFailure(nullptr, L"Failed to receive init packet", L"Error", E_FAIL);
     }
+
+    LOG_INFO("ClientLogic::Initialize: received init packet width={}, height={}", m_InitData.Width, m_InitData.Height);
 
     DUPL_RETURN Ret = InitializeDx();
     if (Ret != DUPL_RETURN_SUCCESS) return Ret;
@@ -257,6 +263,7 @@ DUPL_RETURN ClientLogic::Initialize(HWND windowHandle, const char* serverIP, int
         return ProcessFailure(m_DxRes.Device, L"Failed to create local texture", L"Error", hr);
     }
 
+    LOG_INFO("ClientLogic::Initialize: succeeded");
     return DUPL_RETURN_SUCCESS;
 }
 
@@ -408,6 +415,7 @@ void ClientLogic::OnMouseWheel(int delta, int clientX, int clientY)
 
 void ClientLogic::RunLoop()
 {
+    LOG_INFO("ClientLogic::RunLoop starting");
     MSG msg = { 0 };
     m_FrameCount = 0;
     m_LastFPSTick = GetTickCount();
@@ -437,11 +445,13 @@ void ClientLogic::RunLoop()
         PacketHeader pktHeader;
         if (!m_NetClient.ReceivePacketHeader(pktHeader))
         {
+            LOG_WARN("ClientLogic::RunLoop: ReceivePacketHeader failed (connection lost)");
             break; // Connection closed or error
         }
 
         if (pktHeader.Type == PACKET_TYPE_CURSOR_SHAPE)
         {
+            LOG_TRACE("ClientLogic::RunLoop: received CURSOR_SHAPE packet");
             CursorShapePacket cursorPacket;
             std::vector<BYTE> shapeData;
             if (m_NetClient.ReceiveCursorShapeBody(pktHeader, cursorPacket, shapeData))
@@ -466,6 +476,7 @@ void ClientLogic::RunLoop()
 
         if (pktHeader.Type != PACKET_TYPE_FRAME)
         {
+            LOG_WARN("ClientLogic::RunLoop: unknown packet type {}, disconnecting", pktHeader.Type);
             break; // Unknown packet type
         }
 
@@ -473,8 +484,12 @@ void ClientLogic::RunLoop()
         FramePacketHeader header;
         if (!m_NetClient.ReceiveFramePacketBody(pktHeader, uncompressedData, header))
         {
+            LOG_WARN("ClientLogic::RunLoop: ReceiveFramePacketBody failed (connection lost)");
             break; // Connection closed or error
         }
+
+        LOG_TRACE("ClientLogic::RunLoop: FRAME dirty={} move={} delta={}",
+                  header.DirtyRectCount, header.MoveRectCount, header.IsDeltaEncoded ? 1 : 0);
 
         FRAME_DATA frameData;
         RtlZeroMemory(&frameData, sizeof(frameData));
@@ -654,9 +669,11 @@ void ClientLogic::RunLoop()
             if (elapsed >= 1000)
             {
                 float fps = static_cast<float>(m_FrameCount) * 1000.0f / static_cast<float>(elapsed);
+                LOG_DEBUG("ClientLogic::RunLoop: render FPS={:.1f}", fps);
                 UpdateWindowTitle(fps);
                 m_FrameCount = 0;
                 m_LastFPSTick = now;
             }
     }
+    LOG_INFO("ClientLogic::RunLoop exiting");
 }

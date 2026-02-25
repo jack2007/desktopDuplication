@@ -15,6 +15,7 @@
 #include "DuplicationManager.h"
 #include "ThreadManager.h"
 #include "NetworkManager.h"
+#include "Logger.h"
 
 //
 // Globals
@@ -153,6 +154,10 @@ int main()
     // Set system timer resolution to 1ms for accurate waits/sleeps
     timeBeginPeriod(1);
 
+    // Initialise logging: file goes to logs/capture_server.log
+    InitLogger("logs/capture_server.log");
+    LOG_INFO("CaptureServer starting up");
+
     INT SingleOutput;
     INT ServerPort;
     UINT TargetFPS;
@@ -170,6 +175,8 @@ int main()
         return 0;
     }
 
+    LOG_INFO("Configuration: output={}, port={}, fps={}, compress={}", SingleOutput, ServerPort, TargetFPS, CompressLevel);
+
     // Force single output for network streaming
     if (SingleOutput < 0)
     {
@@ -181,6 +188,7 @@ int main()
     if (!UnexpectedErrorEvent)
     {
         ProcessFailure(nullptr, L"UnexpectedErrorEvent creation failed", L"Error", E_UNEXPECTED);
+        LOG_CRITICAL("Failed to create UnexpectedErrorEvent");
         return 0;
     }
 
@@ -189,6 +197,7 @@ int main()
     if (!ExpectedErrorEvent)
     {
         ProcessFailure(nullptr, L"ExpectedErrorEvent creation failed", L"Error", E_UNEXPECTED);
+        LOG_CRITICAL("Failed to create ExpectedErrorEvent");
         return 0;
     }
 
@@ -197,6 +206,7 @@ int main()
     if (!TerminateThreadsEvent)
     {
         ProcessFailure(nullptr, L"TerminateThreadsEvent creation failed", L"Error", E_UNEXPECTED);
+        LOG_CRITICAL("Failed to create TerminateThreadsEvent");
         return 0;
     }
 
@@ -204,8 +214,10 @@ int main()
     if (!NetMgr.Initialize(ServerPort, CompressLevel))
     {
         ProcessFailure(nullptr, L"Failed to initialize network manager", L"Error", E_FAIL);
+        LOG_CRITICAL("Failed to initialize network manager on port {}", ServerPort);
         return 0;
     }
+    LOG_INFO("Network manager initialised, listening on port {}", ServerPort);
 
     THREADMANAGER ThreadMgr;
     RECT DeskBounds;
@@ -261,13 +273,16 @@ int main()
                 // Wait for client connection if not connected
                 if (!NetMgr.IsConnected())
                 {
+                    LOG_INFO("Waiting for client connection on port {}...", ServerPort);
                     wprintf(L"Waiting for client connection on port %d...\n", ServerPort);
                     if (!NetMgr.WaitForClient())
                     {
+                        LOG_ERROR("WaitForClient failed");
                         Ret = DUPL_RETURN_ERROR_UNEXPECTED;
                     }
                     else
                     {
+                        LOG_INFO("Client connected");
                         wprintf(L"Client connected!\n");
                     }
                 }
@@ -277,8 +292,14 @@ int main()
                     Ret = ThreadMgr.Initialize(SingleOutput, OutputCount, UnexpectedErrorEvent, ExpectedErrorEvent, TerminateThreadsEvent, nullptr, &DeskBounds, TargetFPS);
                     if (Ret != DUPL_RETURN_SUCCESS)
                     {
+                        LOG_ERROR("Failed to initialize duplication threads");
                         DisplayMsg(L"Failed to initialize threads", L"Error", S_OK);
                         Ret = DUPL_RETURN_ERROR_UNEXPECTED;
+                    }
+                    else
+                    {
+                        LOG_INFO("Duplication threads started (output={}, count={}, fps={})",
+                                 SingleOutput, OutputCount, TargetFPS);
                     }
                 }
             }
@@ -289,11 +310,13 @@ int main()
                 if (Ret == DUPL_RETURN_ERROR_EXPECTED)
                 {
                     // Some type of system transition is occurring so retry
+                    LOG_WARN("Expected error encountered, scheduling restart");
                     SetEvent(ExpectedErrorEvent);
                 }
                 else
                 {
                     // Unexpected error so exit
+                    LOG_CRITICAL("Unexpected error encountered, exiting main loop");
                     break;
                 }
             }
@@ -313,6 +336,9 @@ int main()
 
     // Restore system timer resolution
     timeEndPeriod(1);
+
+    LOG_INFO("CaptureServer shutting down");
+    spdlog::shutdown();
 
     return 0;
 }
@@ -495,6 +521,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
     if (!CurrentDesktop)
     {
         // We do not have access to the desktop so request a retry
+        LOG_WARN("DDProc[output={}]: OpenInputDesktop failed, requesting retry", TData->Output);
         SetEvent(TData->ExpectedErrorEvent);
         Ret = DUPL_RETURN_ERROR_EXPECTED;
         goto Exit;
@@ -507,6 +534,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
     if (!DesktopAttached)
     {
         // We do not have access to the desktop so request a retry
+        LOG_WARN("DDProc[output={}]: SetThreadDesktop failed, requesting retry", TData->Output);
         Ret = DUPL_RETURN_ERROR_EXPECTED;
         goto Exit;
     }
@@ -515,6 +543,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
     Ret = DuplMgr.InitDupl(TData->DxRes.Device, TData->Output);
     if (Ret != DUPL_RETURN_SUCCESS)
     {
+        LOG_ERROR("DDProc[output={}]: DuplMgr.InitDupl failed", TData->Output);
         goto Exit;
     }
 
@@ -523,11 +552,16 @@ DWORD WINAPI DDProc(_In_ void* Param)
     RtlZeroMemory(&DesktopDesc, sizeof(DXGI_OUTPUT_DESC));
     DuplMgr.GetOutputDesc(&DesktopDesc);
 
+    LOG_INFO("DDProc[output={}]: desktop size {}x{}", TData->Output,
+             DesktopDesc.DesktopCoordinates.right - DesktopDesc.DesktopCoordinates.left,
+             DesktopDesc.DesktopCoordinates.bottom - DesktopDesc.DesktopCoordinates.top);
+
     // Send Init Packet
     if (!NetMgr.SendInitPacket(DesktopDesc.DesktopCoordinates.right - DesktopDesc.DesktopCoordinates.left,
                           DesktopDesc.DesktopCoordinates.bottom - DesktopDesc.DesktopCoordinates.top,
                           DXGI_FORMAT_B8G8R8A8_UNORM))
     {
+        LOG_ERROR("DDProc[output={}]: SendInitPacket failed", TData->Output);
         Ret = DUPL_RETURN_ERROR_EXPECTED;
         SetEvent(TData->ExpectedErrorEvent);
         goto Exit;
@@ -545,7 +579,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
     LONGLONG frameIntervalTicks = (TData->TargetFPS > 0 && qpcFreq.QuadPart > 0)
         ? (qpcFreq.QuadPart / static_cast<LONGLONG>(TData->TargetFPS)) : 0LL;
 
-    printf("frameIntervalTicks %ld\n", frameIntervalTicks);
+    LOG_DEBUG("DDProc[output={}]: frameIntervalTicks={}", TData->Output, frameIntervalTicks);
 
     UINT statsFrameCount = 0;
     ULONGLONG statsLastTick = GetTickCount64();
@@ -561,6 +595,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
             {
                 // An error occurred getting the next frame drop out of loop which
                 // will check if it was expected or not
+                LOG_WARN("DDProc[output={}]: GetFrame failed, exiting loop", TData->Output);
                 break;
             }
 
@@ -607,6 +642,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
         if (!NetMgr.SendFramePacket(&CurrentData, TData->PtrInfo, TData->DxRes.Device, TData->DxRes.Context))
         {
             DuplMgr.DoneWithFrame();
+            LOG_WARN("DDProc[output={}]: SendFramePacket failed, disconnecting", TData->Output);
             Ret = DUPL_RETURN_ERROR_EXPECTED;
             SetEvent(TData->ExpectedErrorEvent);
             break;
@@ -620,6 +656,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
         if (elapsed >= 1000)
         {
             float fps = static_cast<float>(statsFrameCount) * 1000.0f / static_cast<float>(elapsed);
+            LOG_DEBUG("DDProc[output={}]: capture FPS={:.1f}", TData->Output, fps);
             wprintf(L"Capture FPS: %.1f\n", fps);
             statsFrameCount = 0;
             statsLastTick = nowMs;
@@ -629,6 +666,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
         Ret = DuplMgr.DoneWithFrame();
         if (Ret != DUPL_RETURN_SUCCESS)
         {
+            LOG_WARN("DDProc[output={}]: DoneWithFrame failed", TData->Output);
             break;
         }
 
@@ -637,6 +675,7 @@ DWORD WINAPI DDProc(_In_ void* Param)
     }
 
 Exit:
+    LOG_INFO("DDProc[output={}]: exiting duplication loop", TData->Output);
     NetMgr.Disconnect();
 
     if (Ret != DUPL_RETURN_SUCCESS)
@@ -644,11 +683,13 @@ Exit:
         if (Ret == DUPL_RETURN_ERROR_EXPECTED)
         {
             // The system is in a transition state so request the duplication be restarted
+            LOG_WARN("DDProc[output={}]: expected error, signalling restart", TData->Output);
             SetEvent(TData->ExpectedErrorEvent);
         }
         else
         {
             // Unexpected error so exit the application
+            LOG_ERROR("DDProc[output={}]: unexpected error, signalling application exit", TData->Output);
             SetEvent(TData->UnexpectedErrorEvent);
         }
     }
@@ -706,12 +747,16 @@ DUPL_RETURN ProcessFailure(_In_opt_ ID3D11Device* Device, _In_ LPCWSTR Str, _In_
         {
             if (*(CurrentResult++) == TranslatedHr)
             {
+                LOG_WARN("ProcessFailure: expected error - {} (HRESULT=0x{:08X})",
+                         WStrToStr(Str), static_cast<unsigned>(TranslatedHr));
                 return DUPL_RETURN_ERROR_EXPECTED;
             }
         }
     }
 
     // Error was not expected so display the message box
+    LOG_ERROR("ProcessFailure: unexpected error - {} (HRESULT=0x{:08X})",
+              WStrToStr(Str), static_cast<unsigned>(TranslatedHr));
     DisplayMsg(Str, Title, TranslatedHr);
 
     return DUPL_RETURN_ERROR_UNEXPECTED;
@@ -724,9 +769,11 @@ void DisplayMsg(_In_ LPCWSTR Str, _In_ LPCWSTR Title, HRESULT hr)
 {
     if (SUCCEEDED(hr))
     {
+        LOG_INFO("{}: {}", WStrToStr(Title), WStrToStr(Str));
         wprintf(L"%s: %s\n", Title, Str);
         return;
     }
 
+    LOG_ERROR("{}: {} (HRESULT=0x{:08X})", WStrToStr(Title), WStrToStr(Str), static_cast<unsigned>(hr));
     wprintf(L"%s: %s with HRESULT 0x%08X.\n", Title, Str, hr);
 }

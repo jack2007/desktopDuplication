@@ -11,6 +11,7 @@
 #include <windowsx.h>
 
 #include "ClientLogic.h"
+#include "Logger.h"
 
 //
 // Globals
@@ -150,6 +151,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
+    // Initialise logging: file goes to logs/display_client.log
+    InitLogger("logs/display_client.log");
+    LOG_INFO("DisplayClient starting up");
+
     INT SingleOutput;
     char ServerIP[SERVER_IP_BUFFER_SIZE];
     int ServerPort;
@@ -163,6 +168,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         ShowHelp();
         return 0;
     }
+
+    LOG_INFO("Configuration: output={}, server={}:{}", SingleOutput, ServerIP, ServerPort);
 
     // Load simple cursor
     HCURSOR Cursor = nullptr;
@@ -215,6 +222,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     DUPL_RETURN Ret = g_ClientLogic.Initialize(WindowHandle, ServerIP, ServerPort);
     if (Ret == DUPL_RETURN_SUCCESS)
     {
+        LOG_INFO("ClientLogic initialized, entering main loop");
         DYNAMIC_WAIT DynWait;
         for (;;)
         {
@@ -224,22 +232,32 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             MSG peekMsg = {};
             if (PeekMessage(&peekMsg, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE) && peekMsg.message == WM_QUIT)
             {
+                LOG_INFO("WM_QUIT received, exiting");
                 break;
             }
 
             // Connection was lost; attempt to reconnect with progressive backoff
+            LOG_WARN("Connection lost, attempting to reconnect to {}:{}", ServerIP, ServerPort);
             g_ClientLogic.Clean();
             DynWait.Wait();
             Ret = g_ClientLogic.Initialize(WindowHandle, ServerIP, ServerPort);
             if (Ret == DUPL_RETURN_ERROR_UNEXPECTED)
             {
+                LOG_ERROR("Reconnect failed with unexpected error, exiting");
                 break;
             }
         }
     }
+    else
+    {
+        LOG_ERROR("ClientLogic initialization failed");
+    }
 
     // Clean up
     g_ClientLogic.Clean();
+
+    LOG_INFO("DisplayClient shutting down");
+    spdlog::shutdown();
 
     return 0;
 }
@@ -508,12 +526,16 @@ DUPL_RETURN ProcessFailure(_In_opt_ ID3D11Device* Device, _In_ LPCWSTR Str, _In_
         {
             if (*(CurrentResult++) == TranslatedHr)
             {
+                LOG_WARN("ProcessFailure: expected error - {} (HRESULT=0x{:08X})",
+                         WStrToStr(Str), static_cast<unsigned>(TranslatedHr));
                 return DUPL_RETURN_ERROR_EXPECTED;
             }
         }
     }
 
     // Error was not expected so display the message box
+    LOG_ERROR("ProcessFailure: unexpected error - {} (HRESULT=0x{:08X})",
+              WStrToStr(Str), static_cast<unsigned>(TranslatedHr));
     DisplayMsg(Str, Title, TranslatedHr);
 
     return DUPL_RETURN_ERROR_UNEXPECTED;
@@ -526,9 +548,12 @@ void DisplayMsg(_In_ LPCWSTR Str, _In_ LPCWSTR Title, HRESULT hr)
 {
     if (SUCCEEDED(hr))
     {
+        LOG_INFO("{}: {}", WStrToStr(Title), WStrToStr(Str));
         MessageBoxW(nullptr, Str, Title, MB_OK);
         return;
     }
+
+    LOG_ERROR("{}: {} (HRESULT=0x{:08X})", WStrToStr(Title), WStrToStr(Str), static_cast<unsigned>(hr));
 
     const UINT StringLen = (UINT)(wcslen(Str) + sizeof(" with HRESULT 0x########."));
     wchar_t* OutStr = new wchar_t[StringLen];

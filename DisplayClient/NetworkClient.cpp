@@ -7,6 +7,7 @@
 
 #include "NetworkClient.h"
 #include <iostream>
+#include "Logger.h"
 
 NetworkClient::NetworkClient()
 {
@@ -19,8 +20,10 @@ NetworkClient::~NetworkClient()
 
 bool NetworkClient::Initialize(const char* ipAddress, int port)
 {
+    LOG_INFO("NetworkClient::Initialize {}:{}", ipAddress ? ipAddress : "(null)", port);
     if (!m_Compressor.Initialize(1))
     {
+        LOG_ERROR("NetworkClient::Initialize: ZstdCompressor::Initialize failed");
         ProcessFailure(nullptr, L"m_Compressor.Initialize Failed", L"Error", E_FAIL);
         return false;
     }
@@ -30,10 +33,15 @@ bool NetworkClient::Initialize(const char* ipAddress, int port)
 bool NetworkClient::ReceiveInitPacket(InitPacket& outInitData)
 {
     PacketHeader header;
-    if (!m_Client.ReceiveData(&header, sizeof(header))) return false;
+    if (!m_Client.ReceiveData(&header, sizeof(header)))
+    {
+        LOG_ERROR("NetworkClient::ReceiveInitPacket: ReceiveData(header) failed");
+        return false;
+    }
 
     if (header.MagicNumber != PACKET_MAGIC_NUMBER || header.Type != PACKET_TYPE_INIT)
     {
+        LOG_ERROR("NetworkClient::ReceiveInitPacket: invalid header magic=0x{:08X} type={}", header.MagicNumber, header.Type);
         return false;
     }
 
@@ -49,6 +57,7 @@ bool NetworkClient::ReceiveInitPacket(InitPacket& outInitData)
     if (uncompressedData.size() != sizeof(InitPacket)) return false;
 
     memcpy(&outInitData, uncompressedData.data(), sizeof(InitPacket));
+    LOG_INFO("NetworkClient::ReceiveInitPacket: width={}, height={}", outInitData.Width, outInitData.Height);
     return true;
 }
 
@@ -83,6 +92,7 @@ bool NetworkClient::HasData()
 
 void NetworkClient::Disconnect()
 {
+    LOG_INFO("NetworkClient::Disconnect");
     m_Client.Disconnect();
 }
 

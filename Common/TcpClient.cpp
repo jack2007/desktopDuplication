@@ -8,6 +8,7 @@
 #include "TcpClient.h"
 #include <iostream>
 #include <CommonTypes.h>
+#include "Logger.h"
 
 TcpClient::TcpClient() : m_ConnectSocket(INVALID_SOCKET), m_Initialized(false)
 {
@@ -24,10 +25,12 @@ TcpClient::~TcpClient()
 
 bool TcpClient::Connect(const char* ipAddress, int port)
 {
+    LOG_INFO("TcpClient::Connect {}:{}", ipAddress ? ipAddress : "(null)", port);
     WSADATA wsaData;
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0)
     {
+        LOG_ERROR("TcpClient::Connect: WSAStartup failed, code={}", iResult);
         ProcessFailure(nullptr, L"WSAStartup Failed", L"Error", E_FAIL);
         return false;
     }
@@ -37,6 +40,7 @@ bool TcpClient::Connect(const char* ipAddress, int port)
     m_ConnectSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (m_ConnectSocket == INVALID_SOCKET)
     {
+        LOG_ERROR("TcpClient::Connect: socket() failed");
         ProcessFailure(nullptr, L"socket Failed", L"Error", E_FAIL);
         return false;
     }
@@ -50,6 +54,7 @@ bool TcpClient::Connect(const char* ipAddress, int port)
     iResult = connect(m_ConnectSocket, (const sockaddr *) & serverAddr, sizeof(serverAddr));
     if (iResult == SOCKET_ERROR)
     {
+        LOG_ERROR("TcpClient::Connect: connect() failed");
         ProcessFailure(nullptr, L"connect Failed", L"Error", E_FAIL);
         closesocket(m_ConnectSocket);
         m_ConnectSocket = INVALID_SOCKET;
@@ -60,6 +65,8 @@ bool TcpClient::Connect(const char* ipAddress, int port)
     {
         return false;
     }
+
+    LOG_INFO("TcpClient: connected to {}:{}", ipAddress ? ipAddress : "(null)", port);
 
     return true;
 }
@@ -126,6 +133,7 @@ void TcpClient::Disconnect()
 {
     if (m_ConnectSocket != INVALID_SOCKET)
     {
+        LOG_INFO("TcpClient::Disconnect: closing socket");
         shutdown(m_ConnectSocket, SD_BOTH);
         closesocket(m_ConnectSocket);
         m_ConnectSocket = INVALID_SOCKET;

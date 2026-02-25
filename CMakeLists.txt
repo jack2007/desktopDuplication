@@ -8,6 +8,7 @@ project(DesktopDuplication)
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(zstd CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 # Common Library
 add_library(Common STATIC
@@ -15,7 +16,7 @@ add_library(Common STATIC
     Common/TcpClient.cpp
     Common/ZstdCompressor.cpp
 )
-target_link_libraries(Common PUBLIC zstd::libzstd ws2_32)
+target_link_libraries(Common PUBLIC zstd::libzstd ws2_32 spdlog::spdlog)
 target_include_directories(Common PUBLIC Common)
 
 # Capture Server

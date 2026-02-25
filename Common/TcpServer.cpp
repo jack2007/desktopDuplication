@@ -7,6 +7,7 @@
 
 #include "TcpServer.h"
 #include <iostream>
+#include "Logger.h"
 
 TcpServer::TcpServer() : m_ListenSocket(INVALID_SOCKET), m_ClientSocket(INVALID_SOCKET), m_Initialized(false)
 {
@@ -27,10 +28,12 @@ TcpServer::~TcpServer()
 
 bool TcpServer::Initialize(int port)
 {
+    LOG_DEBUG("TcpServer::Initialize port={}", port);
     WSADATA wsaData;
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0)
     {
+        LOG_ERROR("TcpServer::Initialize: WSAStartup failed, code={}", iResult);
         return false;
     }
     m_Initialized = true;
@@ -56,6 +59,7 @@ bool TcpServer::Initialize(int port)
     m_ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (m_ListenSocket == INVALID_SOCKET)
     {
+        LOG_ERROR("TcpServer::Initialize: socket() failed");
         freeaddrinfo(result);
         return false;
     }
@@ -63,6 +67,7 @@ bool TcpServer::Initialize(int port)
     iResult = bind(m_ListenSocket, result->ai_addr, (int)result->ai_addrlen);
     if (iResult == SOCKET_ERROR)
     {
+        LOG_ERROR("TcpServer::Initialize: bind() failed on port {}", port);
         freeaddrinfo(result);
         closesocket(m_ListenSocket);
         m_ListenSocket = INVALID_SOCKET;
@@ -74,11 +79,13 @@ bool TcpServer::Initialize(int port)
     iResult = listen(m_ListenSocket, SOMAXCONN);
     if (iResult == SOCKET_ERROR)
     {
+        LOG_ERROR("TcpServer::Initialize: listen() failed on port {}", port);
         closesocket(m_ListenSocket);
         m_ListenSocket = INVALID_SOCKET;
         return false;
     }
 
+    LOG_INFO("TcpServer::Initialize: listening on port {}", port);
     return true;
 }
 
@@ -86,12 +93,15 @@ bool TcpServer::WaitForClient()
 {
     if (m_ListenSocket == INVALID_SOCKET) return false;
 
+    LOG_INFO("TcpServer::WaitForClient: waiting for incoming connection");
     m_ClientSocket = accept(m_ListenSocket, NULL, NULL);
     if (m_ClientSocket == INVALID_SOCKET)
     {
+        LOG_ERROR("TcpServer::WaitForClient: accept() failed");
         return false;
     }
 
+    LOG_INFO("TcpServer::WaitForClient: client accepted");
     return true;
 }
 
@@ -154,6 +164,7 @@ void TcpServer::Disconnect()
 {
     if (m_ClientSocket != INVALID_SOCKET)
     {
+        LOG_INFO("TcpServer::Disconnect: closing client socket");
         shutdown(m_ClientSocket, SD_BOTH);
         closesocket(m_ClientSocket);
         m_ClientSocket = INVALID_SOCKET;
