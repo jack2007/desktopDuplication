@@ -10,6 +10,7 @@
 #include <tmmintrin.h>
 #include <cstring>
 #include <iostream>
+#include "Logger.h"
 
 NetworkManager::NetworkManager() : m_StagingTexture(nullptr), m_NeedsFullFrame(true), m_ScreenWidth(0), m_ScreenHeight(0)
 {
@@ -28,8 +29,10 @@ NetworkManager::~NetworkManager()
 
 bool NetworkManager::Initialize(int port, unsigned int compressLevel)
 {
+    LOG_INFO("NetworkManager::Initialize port={}, compressLevel={}", port, compressLevel);
     if (!m_Compressor.Initialize(compressLevel))
     {
+        LOG_ERROR("NetworkManager::Initialize: ZstdCompressor::Initialize failed");
         return false;
     }
     return m_Server.Initialize(port);
@@ -42,6 +45,7 @@ bool NetworkManager::WaitForClient()
 
 bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT format)
 {
+    LOG_INFO("NetworkManager::SendInitPacket width={}, height={}, format={}", width, height, static_cast<int>(format));
     m_ScreenWidth = width;
     m_ScreenHeight = height;
     m_NeedsFullFrame = true;
@@ -70,8 +74,8 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     header.Reserved[1] = 0;
     header.Reserved[2] = 0;
 
-    if (!m_Server.SendData(&header, sizeof(header))) return false;
-    if (!m_Server.SendData(compressedData.data(), compressedData.size())) return false;
+    if (!m_Server.SendData(&header, sizeof(header))) { LOG_ERROR("NetworkManager::SendInitPacket: SendData(header) failed"); return false; }
+    if (!m_Server.SendData(compressedData.data(), compressedData.size())) { LOG_ERROR("NetworkManager::SendInitPacket: SendData(payload) failed"); return false; }
 
     // Proactively send the current cursor shape so the client sees a cursor immediately
     CursorShapePacket cursorPacket;
@@ -163,6 +167,10 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
 
     printf("uncompressedPayload Size %u, compressedData %u\n", uncompressedPayload.size(), compressedData.size());
 
+    LOG_DEBUG("NetworkManager::SendFramePacket uncompressedSize={}, compressedSize={}, dirtyRects={}, moveRects={}",
+              uncompressedPayload.size(), compressedData.size(),
+              frameHeader.DirtyRectCount, frameHeader.MoveRectCount);
+
     // Send Header
     PacketHeader header;
     header.MagicNumber = PACKET_MAGIC_NUMBER;
@@ -174,10 +182,10 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     header.Reserved[1] = 0;
     header.Reserved[2] = 0;
 
-    if (!m_Server.SendData(&header, sizeof(header))) return false;
+    if (!m_Server.SendData(&header, sizeof(header))) { LOG_ERROR("NetworkManager::SendFramePacket: SendData(header) failed"); return false; }
 
     // Send Payload
-    if (!m_Server.SendData(compressedData.data(), compressedData.size())) return false;
+    if (!m_Server.SendData(compressedData.data(), compressedData.size())) { LOG_ERROR("NetworkManager::SendFramePacket: SendData(payload) failed"); return false; }
 
     m_NeedsFullFrame = false;
     return true;
@@ -317,6 +325,7 @@ bool NetworkManager::IsConnected()
 
 void NetworkManager::Disconnect()
 {
+    LOG_INFO("NetworkManager::Disconnect");
     m_Server.Disconnect();
 }
 
