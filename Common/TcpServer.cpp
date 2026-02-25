@@ -137,6 +137,19 @@ bool TcpServer::ReceiveData(void* buffer, size_t size)
     return true;
 }
 
+bool TcpServer::HasData()
+{
+    if (m_ClientSocket == INVALID_SOCKET) return false;
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(m_ClientSocket, &readfds);
+    timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0; // non-blocking check
+    int result = select(0, &readfds, NULL, NULL, &timeout);
+    return result > 0;
+}
+
 void TcpServer::Disconnect()
 {
     if (m_ClientSocket != INVALID_SOCKET)

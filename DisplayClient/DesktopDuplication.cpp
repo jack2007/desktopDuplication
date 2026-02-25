@@ -8,6 +8,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <limits.h>
+#include <windowsx.h>
 
 #include "ClientLogic.h"
 
@@ -175,7 +176,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     // Register class
     WNDCLASSEXW Wc;
     Wc.cbSize           = sizeof(WNDCLASSEXW);
-    Wc.style            = CS_HREDRAW | CS_VREDRAW;
+    Wc.style            = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     Wc.lpfnWndProc      = WndProc;
     Wc.cbClsExtra       = 0;
     Wc.cbWndExtra       = 0;
@@ -388,6 +389,67 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
             }
             break;
+        }
+        case WM_MOUSEMOVE:
+        {
+            g_ClientLogic.OnMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_LBUTTONDOWN:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_LBUTTON_DOWN, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_LBUTTONUP:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_LBUTTON_UP, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_RBUTTONDOWN:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_RBUTTON_DOWN, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_RBUTTONUP:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_RBUTTON_UP, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_MBUTTONDOWN:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_MBUTTON_DOWN, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_MBUTTONUP:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_MBUTTON_UP, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_LBUTTONDBLCLK:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_LBUTTON_DBLCLK, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_RBUTTONDBLCLK:
+        {
+            g_ClientLogic.OnMouseButton(MOUSE_INPUT_RBUTTON_DBLCLK, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            break;
+        }
+        case WM_MOUSEWHEEL:
+        {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hWnd, &pt);
+            g_ClientLogic.OnMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), pt.x, pt.y);
+            break;
+        }
+        case WM_SETCURSOR:
+        {
+            if (LOWORD(lParam) == HTCLIENT)
+            {
+                SetCursor(nullptr);
+                return TRUE;
+            }
+            return DefWindowProc(hWnd, message, wParam, lParam);
         }
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);

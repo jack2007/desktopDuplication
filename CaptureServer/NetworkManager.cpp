@@ -45,6 +45,7 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     m_ScreenWidth = width;
     m_ScreenHeight = height;
     m_NeedsFullFrame = true;
+    m_MouseController.SetScreenSize(width, height);
     // Reset previous frame buffer so the first frame after (re)connect is sent as raw pixels
     m_PrevFrame.assign(static_cast<size_t>(width) * height * 4, 0);
 
@@ -70,7 +71,17 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     header.Reserved[2] = 0;
 
     if (!m_Server.SendData(&header, sizeof(header))) return false;
-    return m_Server.SendData(compressedData.data(), compressedData.size());
+    if (!m_Server.SendData(compressedData.data(), compressedData.size())) return false;
+
+    // Proactively send the current cursor shape so the client sees a cursor immediately
+    CursorShapePacket cursorPacket;
+    std::vector<BYTE> shapeData;
+    if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+    {
+        SendCursorShape(cursorPacket, shapeData);
+    }
+
+    return true;
 }
 
 bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptrInfo, ID3D11Device* device, ID3D11DeviceContext* context)
@@ -307,4 +318,58 @@ bool NetworkManager::IsConnected()
 void NetworkManager::Disconnect()
 {
     m_Server.Disconnect();
+}
+
+bool NetworkManager::HasClientData()
+{
+    return m_Server.HasData();
+}
+
+bool NetworkManager::ReceiveMouseInput(MouseInputPacket& outInput)
+{
+    PacketHeader header;
+    if (!m_Server.ReceiveData(&header, sizeof(header))) return false;
+    if (header.MagicNumber != PACKET_MAGIC_NUMBER || header.Type != PACKET_TYPE_MOUSE_INPUT) return false;
+    if (header.UncompressedSize != sizeof(MouseInputPacket)) return false;
+    return m_Server.ReceiveData(&outInput, sizeof(MouseInputPacket));
+}
+
+bool NetworkManager::SendCursorShape(const CursorShapePacket& packet, const std::vector<BYTE>& shapeData)
+{
+    UINT32 payloadSize = static_cast<UINT32>(sizeof(CursorShapePacket)) + packet.ShapeBufferSize;
+
+    PacketHeader header;
+    header.MagicNumber      = PACKET_MAGIC_NUMBER;
+    header.Type             = PACKET_TYPE_CURSOR_SHAPE;
+    header.CompressedSize   = payloadSize;
+    header.UncompressedSize = payloadSize;
+    header.ProtocolVersion  = 1;
+    header.Reserved[0]      = 0;
+    header.Reserved[1]      = 0;
+    header.Reserved[2]      = 0;
+
+    if (!m_Server.SendData(&header, sizeof(header))) return false;
+    if (!m_Server.SendData(&packet, sizeof(CursorShapePacket))) return false;
+    if (packet.ShapeBufferSize > 0 && !shapeData.empty())
+    {
+        if (!m_Server.SendData(shapeData.data(), packet.ShapeBufferSize)) return false;
+    }
+    return true;
+}
+
+void NetworkManager::ProcessPendingMouseInput()
+{
+    if (!m_Server.HasData()) return;
+
+    MouseInputPacket input;
+    if (!ReceiveMouseInput(input)) return;
+
+    m_MouseController.ProcessMouseInput(input);
+
+    CursorShapePacket cursorPacket;
+    std::vector<BYTE> shapeData;
+    if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+    {
+        SendCursorShape(cursorPacket, shapeData);
+    }
 }
