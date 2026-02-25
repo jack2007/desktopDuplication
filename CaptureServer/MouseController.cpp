@@ -16,6 +16,7 @@ void MouseController::SetScreenSize(UINT32 width, UINT32 height)
 {
     m_ScreenWidth = width;
     m_ScreenHeight = height;
+    m_LastCursor = nullptr; // Force full cursor shape re-send on new connection
 }
 
 void MouseController::ProcessMouseInput(const MouseInputPacket& input)

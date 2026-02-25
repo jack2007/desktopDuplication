@@ -54,6 +54,9 @@ void ClientLogic::Clean()
         delete[] m_PtrInfo.PtrShapeBuffer;
         m_PtrInfo.PtrShapeBuffer = nullptr;
     }
+    m_PtrInfo.Visible = false;
+    m_PtrInfo.BufferSize = 0;
+    m_CursorCache.clear();
 
     CleanDx();
 }
@@ -342,6 +345,7 @@ void ClientLogic::ProcessCursorShape(const CursorShapePacket& packet, const std:
         if (it != m_CursorCache.end())
         {
             m_PtrInfo.ShapeInfo = it->second.ShapeInfo;
+            m_PtrInfo.Visible = true;
             UINT32 bufSize = static_cast<UINT32>(it->second.ShapeBuffer.size());
             if (m_PtrInfo.BufferSize < bufSize)
             {
@@ -359,13 +363,9 @@ void ClientLogic::OnMouseMove(int clientX, int clientY)
     INT32 serverX, serverY;
     MapClientToServer(clientX, clientY, serverX, serverY);
 
-    // Update local cursor position immediately for zero-latency display
-    if (m_PtrInfo.PtrShapeBuffer != nullptr)
-    {
-        m_PtrInfo.Position.x = serverX - m_PtrInfo.ShapeInfo.HotSpot.x;
-        m_PtrInfo.Position.y = serverY - m_PtrInfo.ShapeInfo.HotSpot.y;
-        m_PtrInfo.Visible = true;
-    }
+    // Always update position for zero-latency display (Visible is set by ProcessCursorShape)
+    m_PtrInfo.Position.x = serverX - m_PtrInfo.ShapeInfo.HotSpot.x;
+    m_PtrInfo.Position.y = serverY - m_PtrInfo.ShapeInfo.HotSpot.y;
 
     // Throttle sends to ~125 Hz (every 8ms)
     DWORD now = GetTickCount();
@@ -447,6 +447,19 @@ void ClientLogic::RunLoop()
             if (m_NetClient.ReceiveCursorShapeBody(pktHeader, cursorPacket, shapeData))
             {
                 ProcessCursorShape(cursorPacket, shapeData);
+            }
+            // Force an immediate render so the cursor appears even on a static screen.
+            // Use a non-blocking acquire (timeout=0): if the mutex is free we do a
+            // lightweight release(key=1) + UpdateApplicationWindow cycle; if it's busy
+            // the cursor will be drawn on the next regular frame render.
+            if (!m_Occluded && m_KeyMutex)
+            {
+                HRESULT hr = m_KeyMutex->AcquireSync(0, 0);
+                if (SUCCEEDED(hr))
+                {
+                    m_KeyMutex->ReleaseSync(1);
+                    m_OutMgr.UpdateApplicationWindow(&m_PtrInfo, &m_Occluded);
+                }
             }
             continue;
         }

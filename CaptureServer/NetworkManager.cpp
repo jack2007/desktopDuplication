@@ -71,7 +71,17 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     header.Reserved[2] = 0;
 
     if (!m_Server.SendData(&header, sizeof(header))) return false;
-    return m_Server.SendData(compressedData.data(), compressedData.size());
+    if (!m_Server.SendData(compressedData.data(), compressedData.size())) return false;
+
+    // Proactively send the current cursor shape so the client sees a cursor immediately
+    CursorShapePacket cursorPacket;
+    std::vector<BYTE> shapeData;
+    if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+    {
+        SendCursorShape(cursorPacket, shapeData);
+    }
+
+    return true;
 }
 
 bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptrInfo, ID3D11Device* device, ID3D11DeviceContext* context)
