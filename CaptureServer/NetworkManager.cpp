@@ -43,13 +43,22 @@ bool NetworkManager::WaitForClient()
     return m_Server.WaitForClient();
 }
 
-bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT format)
+bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT format, INT32 desktopLeft, INT32 desktopTop)
 {
-    LOG_INFO("NetworkManager::SendInitPacket width={}, height={}, format={}", width, height, static_cast<int>(format));
+    LOG_INFO("NetworkManager::SendInitPacket width={}, height={}, format={}, left={}, top={}",
+             width, height, static_cast<int>(format), desktopLeft, desktopTop);
     m_ScreenWidth = width;
     m_ScreenHeight = height;
     m_NeedsFullFrame = true;
-    m_MouseController.SetScreenSize(width, height);
+    m_MouseController.SetCaptureArea(desktopLeft, desktopTop, width, height);
+    // Reconnect can recreate D3D device/context on duplication thread.
+    // Drop old staging texture so ReadPixelsFromGPU rebuilds it on the current device.
+    if (m_StagingTexture)
+    {
+        m_StagingTexture->Release();
+        m_StagingTexture = nullptr;
+        RtlZeroMemory(&m_StagingDesc, sizeof(m_StagingDesc));
+    }
     // Reset previous frame buffer so the first frame after (re)connect is sent as raw pixels
     m_PrevFrame.assign(static_cast<size_t>(width) * height * 4, 0);
 
@@ -82,7 +91,10 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
     std::vector<BYTE> shapeData;
     if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
     {
-        SendCursorShape(cursorPacket, shapeData);
+        if (!SendCursorShape(cursorPacket, shapeData))
+        {
+            LOG_WARN("NetworkManager::SendInitPacket: SendCursorShape failed");
+        }
     }
 
     return true;
@@ -91,6 +103,9 @@ bool NetworkManager::SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT for
 bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptrInfo, ID3D11Device* device, ID3D11DeviceContext* context)
 {
     if (!data || !data->Frame) return false;
+
+    // Drain queued input before heavy frame work to improve interactivity.
+    ProcessPendingMouseInput();
 
     std::vector<BYTE> uncompressedPayload;
 
@@ -152,13 +167,16 @@ bool NetworkManager::SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptr
     if (dirtyCount > 0)
     {
         std::vector<BYTE> pixelData;
-        if (ReadPixelsFromGPU(data->Frame, device, context, dirtyRects, dirtyCount, pixelData))
+        if (!ReadPixelsFromGPU(data->Frame, device, context, dirtyRects, dirtyCount, pixelData))
         {
-            uncompressedPayload.insert(uncompressedPayload.end(), pixelData.begin(), pixelData.end());
+            LOG_ERROR("NetworkManager::SendFramePacket: ReadPixelsFromGPU failed (dirtyCount={})", dirtyCount);
+            return false;
         }
+        uncompressedPayload.insert(uncompressedPayload.end(), pixelData.begin(), pixelData.end());
     }
 
     // Compress Payload
+    ProcessPendingMouseInput();
     std::vector<BYTE> compressedData;
     if (!m_Compressor.Compress(uncompressedPayload.data(), uncompressedPayload.size(), compressedData))
     {
@@ -369,21 +387,64 @@ bool NetworkManager::SendCursorShape(const CursorShapePacket& packet, const std:
 void NetworkManager::ProcessPendingMouseInput()
 {
     int processed = 0;
+    MouseInputPacket lastInput = {};
+    bool hasLastInput = false;
+    MouseInputPacket pendingMoveInput = {};
+    bool hasPendingMove = false;
     while (m_Server.HasData())
     {
         MouseInputPacket input;
         if (!ReceiveMouseInput(input)) break;
+
+        // Coalesce burst mouse-move packets to the latest point so
+        // click/wheel actions are not delayed by stale move backlog.
+        if (input.InputType == static_cast<UINT8>(MOUSE_INPUT_MOVE))
+        {
+            pendingMoveInput = input;
+            hasPendingMove = true;
+            continue;
+        }
+
+        if (hasPendingMove)
+        {
+            m_MouseController.ProcessMouseInput(pendingMoveInput);
+            lastInput = pendingMoveInput;
+            hasLastInput = true;
+            processed++;
+            hasPendingMove = false;
+        }
+
         m_MouseController.ProcessMouseInput(input);
+        lastInput = input;
+        hasLastInput = true;
+        processed++;
+    }
+
+    if (hasPendingMove)
+    {
+        m_MouseController.ProcessMouseInput(pendingMoveInput);
+        lastInput = pendingMoveInput;
+        hasLastInput = true;
         processed++;
     }
 
     if (processed > 0)
     {
+        if (hasLastInput)
+        {
+            LOG_DEBUG("NetworkManager::ProcessPendingMouseInput processed={}, lastType={}, x={}, y={}, wheel={}",
+                      processed,
+                      static_cast<unsigned>(lastInput.InputType),
+                      lastInput.X, lastInput.Y, lastInput.WheelDelta);
+        }
         CursorShapePacket cursorPacket;
         std::vector<BYTE> shapeData;
         if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
         {
-            SendCursorShape(cursorPacket, shapeData);
+            if (!SendCursorShape(cursorPacket, shapeData))
+            {
+                LOG_WARN("NetworkManager::ProcessPendingMouseInput: SendCursorShape failed");
+            }
         }
     }
 }

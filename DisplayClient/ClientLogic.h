@@ -39,6 +39,7 @@ public:
     void OnMouseMove(int clientX, int clientY);
     void OnMouseButton(MouseInputType type, int clientX, int clientY);
     void OnMouseWheel(int delta, int clientX, int clientY);
+    bool ShouldHideLocalCursor() const;
 
 private:
     DUPL_RETURN InitializeDx();
@@ -74,6 +75,7 @@ private:
     // Mouse control
     DWORD m_LastMouseSendTick;
     std::unordered_map<UINT32, CachedCursor> m_CursorCache;
+    bool m_HasRemoteCursorShape;
 };
 
 #endif

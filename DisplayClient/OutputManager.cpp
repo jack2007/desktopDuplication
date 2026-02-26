@@ -123,7 +123,7 @@ DUPL_RETURN OUTPUTMANAGER::InitOutput(HWND Window, INT SingleOutput, _Out_ UINT*
     hr = m_Factory->RegisterOcclusionStatusWindow(Window, OCCLUSION_STATUS_MSG, &m_OcclusionCookie);
     if (FAILED(hr))
     {
-        return ProcessFailure(m_Device, L"Failed to register for occlusion message", L"Error", hr, SystemTransitionsExpectedErrors);
+        m_OcclusionCookie = 0;
     }
 
     // Get window size
@@ -309,13 +309,18 @@ DUPL_RETURN OUTPUTMANAGER::UpdateApplicationWindow(_In_ PTR_INFO* PointerInfo, _
     {
         // Present to window
         hr = m_SwapChain->Present(1, 0);
-        if (FAILED(hr))
+        if (hr == DXGI_STATUS_OCCLUDED)
+        {
+            // If occlusion notifications are unavailable, don't permanently block rendering.
+            *Occluded = (m_OcclusionCookie != 0);
+        }
+        else if (FAILED(hr))
         {
             return ProcessFailure(m_Device, L"Failed to present", L"Error", hr, SystemTransitionsExpectedErrors);
         }
-        else if (hr == DXGI_STATUS_OCCLUDED)
+        else
         {
-            *Occluded = true;
+            *Occluded = false;
         }
     }
 

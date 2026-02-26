@@ -23,7 +23,7 @@ public:
 
     bool Initialize(int port, unsigned int compressLevel);
     bool WaitForClient();
-    bool SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT format);
+    bool SendInitPacket(UINT32 width, UINT32 height, DXGI_FORMAT format, INT32 desktopLeft = 0, INT32 desktopTop = 0);
     bool SendFramePacket(const FRAME_DATA* data, const PTR_INFO* ptrInfo, ID3D11Device* device, ID3D11DeviceContext* context);
     bool IsConnected();
     void Disconnect();

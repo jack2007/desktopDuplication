@@ -228,9 +228,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         {
             g_ClientLogic.RunLoop();
 
-            // RunLoop exited; stop if window was closed
+            // RunLoop exited; process any pending messages so WM_DESTROY can
+            // post WM_QUIT before we decide whether to reconnect.
+            bool shouldExit = false;
             MSG peekMsg = {};
-            if (PeekMessage(&peekMsg, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE) && peekMsg.message == WM_QUIT)
+            while (PeekMessage(&peekMsg, nullptr, 0, 0, PM_REMOVE))
+            {
+                if (peekMsg.message == WM_QUIT)
+                {
+                    shouldExit = true;
+                    break;
+                }
+                TranslateMessage(&peekMsg);
+                DispatchMessage(&peekMsg);
+            }
+
+            if (shouldExit || !IsWindow(WindowHandle))
             {
                 LOG_INFO("WM_QUIT received, exiting");
                 break;
@@ -464,7 +477,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             if (LOWORD(lParam) == HTCLIENT)
             {
-                SetCursor(nullptr);
+                if (g_ClientLogic.ShouldHideLocalCursor())
+                {
+                    SetCursor(nullptr);
+                }
+                else
+                {
+                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+                }
                 return TRUE;
             }
             return DefWindowProc(hWnd, message, wParam, lParam);

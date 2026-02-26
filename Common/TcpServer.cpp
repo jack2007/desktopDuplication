@@ -102,6 +102,12 @@ bool TcpServer::WaitForClient()
     }
 
     LOG_INFO("TcpServer::WaitForClient: client accepted");
+
+    // Reduce small-packet latency for interactive mouse input packets.
+    BOOL noDelay = TRUE;
+    setsockopt(m_ClientSocket, IPPROTO_TCP, TCP_NODELAY,
+               reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
+
     return true;
 }
 

@@ -66,6 +66,33 @@ bool ProcessCmdline(_Out_ INT* Output, _Out_ INT* Port, _Out_ UINT* TargetFPS, U
 void ShowHelp();
 DUPL_RETURN GetOutputCountAndBounds(INT SingleOutput, _Out_ UINT* OutCount, _Out_ RECT* DeskBounds);
 
+bool IsProcessElevated()
+{
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    {
+        return false;
+    }
+
+    TOKEN_ELEVATION elevation = {};
+    DWORD size = 0;
+    BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+    CloseHandle(token);
+    return (ok == TRUE) && (elevation.TokenIsElevated != 0);
+}
+
+void WarnIfNotElevated()
+{
+    if (!IsProcessElevated())
+    {
+        LOG_WARN("CaptureServer is not running as administrator. "
+                 "Mouse input may not work on elevated/protected UI (e.g. Task Manager, taskbar/UAC related surfaces).");
+        wprintf(L"[WARN] CaptureServer is not running as administrator.\n");
+        wprintf(L"       Mouse input may not work on Task Manager/taskbar/UAC related windows.\n");
+        wprintf(L"       Please run CaptureServer as administrator for full mouse control.\n");
+    }
+}
+
 //
 // Class for progressive waits
 //
@@ -157,6 +184,7 @@ int main()
     // Initialise logging: file goes to logs/capture_server.log
     InitLogger("logs/capture_server.log");
     LOG_INFO("CaptureServer starting up");
+    WarnIfNotElevated();
 
     INT SingleOutput;
     INT ServerPort;
@@ -559,7 +587,9 @@ DWORD WINAPI DDProc(_In_ void* Param)
     // Send Init Packet
     if (!NetMgr.SendInitPacket(DesktopDesc.DesktopCoordinates.right - DesktopDesc.DesktopCoordinates.left,
                           DesktopDesc.DesktopCoordinates.bottom - DesktopDesc.DesktopCoordinates.top,
-                          DXGI_FORMAT_B8G8R8A8_UNORM))
+                          DXGI_FORMAT_B8G8R8A8_UNORM,
+                          DesktopDesc.DesktopCoordinates.left,
+                          DesktopDesc.DesktopCoordinates.top))
     {
         LOG_ERROR("DDProc[output={}]: SendInitPacket failed", TData->Output);
         Ret = DUPL_RETURN_ERROR_EXPECTED;
@@ -584,8 +614,13 @@ DWORD WINAPI DDProc(_In_ void* Param)
     UINT statsFrameCount = 0;
     ULONGLONG statsLastTick = GetTickCount64();
 
-    while ((WaitForSingleObjectEx(TData->TerminateThreadsEvent, 10, FALSE) == WAIT_TIMEOUT))
+    // Use a short wait slice so input processing is not quantized at 10ms.
+    while ((WaitForSingleObjectEx(TData->TerminateThreadsEvent, 1, FALSE) == WAIT_TIMEOUT))
     {
+        // Prioritize mouse input processing every iteration to reduce
+        // click/move latency under heavy frame traffic.
+        NetMgr.ProcessPendingMouseInput();
+
         if (!WaitToProcessCurrentFrame)
         {
             // Get new frame from desktop duplication

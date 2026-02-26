@@ -18,10 +18,13 @@ public:
     MouseController();
 
     void SetScreenSize(UINT32 width, UINT32 height);
+    void SetCaptureArea(INT32 left, INT32 top, UINT32 width, UINT32 height);
     void ProcessMouseInput(const MouseInputPacket& input);
     bool GetCurrentCursorShape(CursorShapePacket& outPacket, std::vector<BYTE>& outShapeData);
 
 private:
+    INT32   m_CaptureLeft;
+    INT32   m_CaptureTop;
     UINT32  m_ScreenWidth;
     UINT32  m_ScreenHeight;
     HCURSOR m_LastCursor;

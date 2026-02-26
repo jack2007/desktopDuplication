@@ -14,7 +14,7 @@
 #include "VertexShader.h"
 #include "PixelShader.h"
 
-ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(false), m_FrameCount(0), m_LastFPSTick(0), m_ServerPort(0), m_LastMouseSendTick(0)
+ClientLogic::ClientLogic() : m_LocalTexture(nullptr), m_SharedSurf(nullptr), m_KeyMutex(nullptr), m_WindowHandle(nullptr), m_Occluded(false), m_FrameCount(0), m_LastFPSTick(0), m_ServerPort(0), m_LastMouseSendTick(0), m_HasRemoteCursorShape(false)
 {
     RtlZeroMemory(&m_DxRes, sizeof(m_DxRes));
     RtlZeroMemory(&m_InitData, sizeof(m_InitData));
@@ -59,6 +59,9 @@ void ClientLogic::Clean()
     m_PtrInfo.BufferSize = 0;
     m_CursorCache.clear();
     m_LastMouseSendTick = 0;
+    m_HasRemoteCursorShape = false;
+    m_Occluded = false;
+    m_PrevFrame.clear();
 
     CleanDx();
 }
@@ -203,6 +206,7 @@ DUPL_RETURN ClientLogic::Initialize(HWND windowHandle, const char* serverIP, int
     m_WindowHandle = windowHandle;
     m_ServerIP = serverIP ? serverIP : "127.0.0.1";
     m_ServerPort = port;
+    m_Occluded = false;
 
     if (!m_NetClient.Initialize(m_ServerIP.c_str(), m_ServerPort))
     {
@@ -339,6 +343,7 @@ void ClientLogic::ProcessCursorShape(const CursorShapePacket& packet, const std:
             m_PtrInfo.BufferSize = packet.ShapeBufferSize;
         }
         memcpy(m_PtrInfo.PtrShapeBuffer, shapeData.data(), packet.ShapeBufferSize);
+        m_HasRemoteCursorShape = true;
 
         // Cache the cursor shape by ID
         CachedCursor cached;
@@ -362,8 +367,17 @@ void ClientLogic::ProcessCursorShape(const CursorShapePacket& packet, const std:
                 m_PtrInfo.BufferSize = bufSize;
             }
             memcpy(m_PtrInfo.PtrShapeBuffer, it->second.ShapeBuffer.data(), bufSize);
+            m_HasRemoteCursorShape = true;
         }
     }
+}
+
+bool ClientLogic::ShouldHideLocalCursor() const
+{
+    // Only hide local cursor after we have a valid remote cursor shape.
+    // This avoids a "cursor disappears completely" user experience if the
+    // server never sends/returns cursor shape packets.
+    return m_HasRemoteCursorShape && m_PtrInfo.Visible;
 }
 
 void ClientLogic::OnMouseMove(int clientX, int clientY)
@@ -389,9 +403,9 @@ void ClientLogic::OnMouseMove(int clientX, int clientY)
         }
     }
 
-    // Throttle sends to ~125 Hz (every 8ms)
+    // Throttle sends to ~500 Hz (every 2ms) to reduce control latency.
     DWORD now = GetTickCount();
-    if (now - m_LastMouseSendTick < 8) return;
+    if (now - m_LastMouseSendTick < 2) return;
     m_LastMouseSendTick = now;
 
     MouseInputPacket input;
@@ -399,7 +413,10 @@ void ClientLogic::OnMouseMove(int clientX, int clientY)
     input.X          = serverX;
     input.Y          = serverY;
     input.WheelDelta = 0;
-    m_NetClient.SendMouseInput(input);
+    if (!m_NetClient.SendMouseInput(input))
+    {
+        LOG_WARN("ClientLogic::OnMouseMove: SendMouseInput failed");
+    }
 }
 
 void ClientLogic::OnMouseButton(MouseInputType type, int clientX, int clientY)
@@ -412,7 +429,10 @@ void ClientLogic::OnMouseButton(MouseInputType type, int clientX, int clientY)
     input.X          = serverX;
     input.Y          = serverY;
     input.WheelDelta = 0;
-    m_NetClient.SendMouseInput(input);
+    if (!m_NetClient.SendMouseInput(input))
+    {
+        LOG_WARN("ClientLogic::OnMouseButton: SendMouseInput failed, type={}", static_cast<unsigned>(type));
+    }
 }
 
 void ClientLogic::OnMouseWheel(int delta, int clientX, int clientY)
@@ -425,7 +445,10 @@ void ClientLogic::OnMouseWheel(int delta, int clientX, int clientY)
     input.X          = serverX;
     input.Y          = serverY;
     input.WheelDelta = delta;
-    m_NetClient.SendMouseInput(input);
+    if (!m_NetClient.SendMouseInput(input))
+    {
+        LOG_WARN("ClientLogic::OnMouseWheel: SendMouseInput failed, delta={}", delta);
+    }
 }
 
 void ClientLogic::RunLoop()

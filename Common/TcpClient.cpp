@@ -66,6 +66,11 @@ bool TcpClient::Connect(const char* ipAddress, int port)
         return false;
     }
 
+    // Reduce small-packet latency for interactive mouse input packets.
+    BOOL noDelay = TRUE;
+    setsockopt(m_ConnectSocket, IPPROTO_TCP, TCP_NODELAY,
+               reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
+
     LOG_INFO("TcpClient: connected to {}:{}", ipAddress ? ipAddress : "(null)", port);
 
     return true;
@@ -123,7 +128,7 @@ bool TcpClient::HasData()
 
     timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 10000; // 10ms timeout
+    timeout.tv_usec = 0; // non-blocking check to avoid input-loop stalls
 
     int result = select(0, &readfds, NULL, NULL, &timeout);
     return result > 0;
