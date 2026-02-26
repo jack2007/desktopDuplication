@@ -10,12 +10,39 @@ if(MSVC)
     add_compile_options(/utf-8)
     
     # 可选：同时设置字符集为 Unicode（等价于 VS 里的“使用 Unicode 字符集”）
-    add_definitions(-DUNICODE -D_UNICODE)
+    add_definitions(-DUNICODE -D_UNICODE -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(zstd CONFIG REQUIRED)
+# 自动补充项目内 vcpkg 依赖路径，避免每次手动传 -DCMAKE_PREFIX_PATH
+set(LOCAL_VCPKG_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-windows")
+if(EXISTS "${LOCAL_VCPKG_PREFIX}/share/zstd/zstdConfig.cmake")
+    list(PREPEND CMAKE_PREFIX_PATH "${LOCAL_VCPKG_PREFIX}")
+endif()
+
+set(ZSTD_CONFIG_FILE "${LOCAL_VCPKG_PREFIX}/share/zstd/zstdConfig.cmake")
+set(ZSTD_INCLUDE_FILE "${LOCAL_VCPKG_PREFIX}/include/zstd.h")
+set(ZSTD_RELEASE_LIB "${LOCAL_VCPKG_PREFIX}/lib/zstd.lib")
+set(ZSTD_DEBUG_LIB "${LOCAL_VCPKG_PREFIX}/debug/lib/zstd.lib")
+
+# 若 zstd 的 debug 包缺失，find_package(zstd CONFIG) 会在配置阶段报错。
+# 这种情况下回退到手动导入 release 库，保证 CMake 能正常生成工程文件。
+if(EXISTS "${ZSTD_CONFIG_FILE}" AND EXISTS "${ZSTD_DEBUG_LIB}")
+    find_package(zstd CONFIG REQUIRED)
+else()
+    if(NOT EXISTS "${ZSTD_RELEASE_LIB}" OR NOT EXISTS "${ZSTD_INCLUDE_FILE}")
+        message(FATAL_ERROR "zstd not found. Expected files under ${LOCAL_VCPKG_PREFIX}")
+    endif()
+
+    add_library(zstd::libzstd UNKNOWN IMPORTED)
+    set_target_properties(zstd::libzstd PROPERTIES
+        IMPORTED_LOCATION "${ZSTD_RELEASE_LIB}"
+        IMPORTED_LOCATION_DEBUG "${ZSTD_RELEASE_LIB}"
+        IMPORTED_LOCATION_RELEASE "${ZSTD_RELEASE_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${LOCAL_VCPKG_PREFIX}/include"
+    )
+endif()
 #find_package(spdlog CONFIG REQUIRED)
 
 # Common Library
