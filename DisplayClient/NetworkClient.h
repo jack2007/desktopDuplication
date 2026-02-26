@@ -27,6 +27,7 @@ public:
     void Disconnect();
 
     bool SendMouseInput(const MouseInputPacket& input);
+    bool SendKeyboardInput(const KeyboardInputPacket& input);
     bool ReceivePacketHeader(PacketHeader& outHeader);
     bool ReceiveFramePacketBody(const PacketHeader& header, std::vector<BYTE>& outUncompressedData, FramePacketHeader& outFrameHeader);
     bool ReceiveCursorShapeBody(const PacketHeader& header, CursorShapePacket& outPacket, std::vector<BYTE>& outShapeData);

@@ -19,7 +19,8 @@ enum PacketType
     PACKET_TYPE_INIT  = 1,
     PACKET_TYPE_FRAME = 2,
     PACKET_TYPE_MOUSE_INPUT  = 3,   // Client -> Server
-    PACKET_TYPE_CURSOR_SHAPE = 4    // Server -> Client
+    PACKET_TYPE_CURSOR_SHAPE = 4,   // Server -> Client
+    PACKET_TYPE_KEYBOARD_INPUT = 5  // Client -> Server
 };
 
 enum MouseInputType : UINT8
@@ -34,6 +35,12 @@ enum MouseInputType : UINT8
     MOUSE_INPUT_WHEEL           = 7,
     MOUSE_INPUT_LBUTTON_DBLCLK  = 8,
     MOUSE_INPUT_RBUTTON_DBLCLK  = 9
+};
+
+enum KeyboardInputFlags : UINT8
+{
+    KEYBOARD_INPUT_FLAG_KEYUP    = 1 << 0,
+    KEYBOARD_INPUT_FLAG_EXTENDED = 1 << 1,
 };
 
 #pragma pack(push, 1)
@@ -75,6 +82,14 @@ struct MouseInputPacket
     INT32  X;               // Server screen coordinate X
     INT32  Y;               // Server screen coordinate Y
     INT32  WheelDelta;      // Only valid for MOUSE_INPUT_WHEEL
+};
+
+struct KeyboardInputPacket
+{
+    UINT16 VirtualKey;      // Windows virtual-key code (VK_*)
+    UINT16 ScanCode;        // Hardware scan code from lParam
+    UINT16 RepeatCount;     // Repeat count from lParam, 1 for normal key event
+    UINT8  Flags;           // KeyboardInputFlags
 };
 
 struct CursorShapePacket

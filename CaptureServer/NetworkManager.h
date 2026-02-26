@@ -13,6 +13,7 @@
 #include "../Common/NetworkProtocol.h"
 #include "CommonTypes.h"
 #include "MouseController.h"
+#include "KeyboardController.h"
 #include <vector>
 
 class NetworkManager
@@ -30,6 +31,7 @@ public:
 
     bool HasClientData();
     bool ReceiveMouseInput(MouseInputPacket& outInput);
+    bool ReceiveKeyboardInput(KeyboardInputPacket& outInput);
     bool SendCursorShape(const CursorShapePacket& packet, const std::vector<BYTE>& shapeData);
     void ProcessPendingMouseInput();
 
@@ -39,6 +41,7 @@ private:
     TcpServer      m_Server;
     ZstdCompressor m_Compressor;
     MouseController m_MouseController;
+    KeyboardController m_KeyboardController;
     ID3D11Texture2D* m_StagingTexture;
     D3D11_TEXTURE2D_DESC m_StagingDesc;
     bool m_NeedsFullFrame;

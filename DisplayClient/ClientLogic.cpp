@@ -451,6 +451,31 @@ void ClientLogic::OnMouseWheel(int delta, int clientX, int clientY)
     }
 }
 
+void ClientLogic::OnKeyboardInput(UINT vkey, LPARAM lParam, bool isKeyUp)
+{
+    KeyboardInputPacket input = {};
+    input.VirtualKey = static_cast<UINT16>(vkey & 0xFFFF);
+    input.ScanCode = static_cast<UINT16>((lParam >> 16) & 0xFF);
+
+    UINT repeatCount = static_cast<UINT>(lParam & 0xFFFF);
+    input.RepeatCount = static_cast<UINT16>(repeatCount == 0 ? 1 : min(repeatCount, 0xFFFFu));
+
+    if (isKeyUp)
+    {
+        input.Flags |= KEYBOARD_INPUT_FLAG_KEYUP;
+    }
+    if ((lParam & (1LL << 24)) != 0)
+    {
+        input.Flags |= KEYBOARD_INPUT_FLAG_EXTENDED;
+    }
+
+    if (!m_NetClient.SendKeyboardInput(input))
+    {
+        LOG_WARN("ClientLogic::OnKeyboardInput: SendKeyboardInput failed, vk={}, keyUp={}",
+                 static_cast<unsigned>(vkey), isKeyUp ? 1 : 0);
+    }
+}
+
 void ClientLogic::RunLoop()
 {
     LOG_INFO("ClientLogic::RunLoop starting");

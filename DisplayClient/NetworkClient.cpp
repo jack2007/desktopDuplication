@@ -112,6 +112,22 @@ bool NetworkClient::SendMouseInput(const MouseInputPacket& input)
     return m_Client.SendData(&input, sizeof(input));
 }
 
+bool NetworkClient::SendKeyboardInput(const KeyboardInputPacket& input)
+{
+    PacketHeader header;
+    header.MagicNumber      = PACKET_MAGIC_NUMBER;
+    header.Type             = PACKET_TYPE_KEYBOARD_INPUT;
+    header.CompressedSize   = sizeof(KeyboardInputPacket);
+    header.UncompressedSize = sizeof(KeyboardInputPacket);
+    header.ProtocolVersion  = 1;
+    header.Reserved[0]      = 0;
+    header.Reserved[1]      = 0;
+    header.Reserved[2]      = 0;
+
+    if (!m_Client.SendData(&header, sizeof(header))) return false;
+    return m_Client.SendData(&input, sizeof(input));
+}
+
 bool NetworkClient::ReceivePacketHeader(PacketHeader& outHeader)
 {
     if (!m_Client.ReceiveData(&outHeader, sizeof(outHeader))) return false;

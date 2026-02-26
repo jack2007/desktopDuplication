@@ -39,6 +39,7 @@ public:
     void OnMouseMove(int clientX, int clientY);
     void OnMouseButton(MouseInputType type, int clientX, int clientY);
     void OnMouseWheel(int delta, int clientX, int clientY);
+    void OnKeyboardInput(UINT vkey, LPARAM lParam, bool isKeyUp);
     bool ShouldHideLocalCursor() const;
 
 private:

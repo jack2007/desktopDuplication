@@ -361,6 +361,15 @@ bool NetworkManager::ReceiveMouseInput(MouseInputPacket& outInput)
     return m_Server.ReceiveData(&outInput, sizeof(MouseInputPacket));
 }
 
+bool NetworkManager::ReceiveKeyboardInput(KeyboardInputPacket& outInput)
+{
+    PacketHeader header;
+    if (!m_Server.ReceiveData(&header, sizeof(header))) return false;
+    if (header.MagicNumber != PACKET_MAGIC_NUMBER || header.Type != PACKET_TYPE_KEYBOARD_INPUT) return false;
+    if (header.UncompressedSize != sizeof(KeyboardInputPacket)) return false;
+    return m_Server.ReceiveData(&outInput, sizeof(KeyboardInputPacket));
+}
+
 bool NetworkManager::SendCursorShape(const CursorShapePacket& packet, const std::vector<BYTE>& shapeData)
 {
     UINT32 payloadSize = static_cast<UINT32>(sizeof(CursorShapePacket)) + packet.ShapeBufferSize;
@@ -386,38 +395,89 @@ bool NetworkManager::SendCursorShape(const CursorShapePacket& packet, const std:
 
 void NetworkManager::ProcessPendingMouseInput()
 {
-    int processed = 0;
+    int processedMouse = 0;
+    int processedKeyboard = 0;
     MouseInputPacket lastInput = {};
     bool hasLastInput = false;
     MouseInputPacket pendingMoveInput = {};
     bool hasPendingMove = false;
     while (m_Server.HasData())
     {
-        MouseInputPacket input;
-        if (!ReceiveMouseInput(input)) break;
-
-        // Coalesce burst mouse-move packets to the latest point so
-        // click/wheel actions are not delayed by stale move backlog.
-        if (input.InputType == static_cast<UINT8>(MOUSE_INPUT_MOVE))
+        PacketHeader header = {};
+        if (!m_Server.ReceiveData(&header, sizeof(header))) break;
+        if (header.MagicNumber != PACKET_MAGIC_NUMBER)
         {
-            pendingMoveInput = input;
-            hasPendingMove = true;
+            break;
+        }
+
+        if (header.Type == PACKET_TYPE_MOUSE_INPUT)
+        {
+            if (header.UncompressedSize != sizeof(MouseInputPacket))
+            {
+                break;
+            }
+
+            MouseInputPacket input = {};
+            if (!m_Server.ReceiveData(&input, sizeof(input)))
+            {
+                break;
+            }
+
+            // Coalesce burst mouse-move packets to the latest point so
+            // click/wheel actions are not delayed by stale move backlog.
+            if (input.InputType == static_cast<UINT8>(MOUSE_INPUT_MOVE))
+            {
+                pendingMoveInput = input;
+                hasPendingMove = true;
+                continue;
+            }
+
+            if (hasPendingMove)
+            {
+                m_MouseController.ProcessMouseInput(pendingMoveInput);
+                lastInput = pendingMoveInput;
+                hasLastInput = true;
+                processedMouse++;
+                hasPendingMove = false;
+            }
+
+            m_MouseController.ProcessMouseInput(input);
+            lastInput = input;
+            hasLastInput = true;
+            processedMouse++;
             continue;
         }
 
-        if (hasPendingMove)
+        if (header.Type == PACKET_TYPE_KEYBOARD_INPUT)
         {
-            m_MouseController.ProcessMouseInput(pendingMoveInput);
-            lastInput = pendingMoveInput;
-            hasLastInput = true;
-            processed++;
-            hasPendingMove = false;
+            if (header.UncompressedSize != sizeof(KeyboardInputPacket))
+            {
+                break;
+            }
+
+            KeyboardInputPacket input = {};
+            if (!m_Server.ReceiveData(&input, sizeof(input)))
+            {
+                break;
+            }
+
+            // Flush pending mouse move before key event to preserve event ordering.
+            if (hasPendingMove)
+            {
+                m_MouseController.ProcessMouseInput(pendingMoveInput);
+                lastInput = pendingMoveInput;
+                hasLastInput = true;
+                processedMouse++;
+                hasPendingMove = false;
+            }
+
+            m_KeyboardController.ProcessKeyboardInput(input);
+            processedKeyboard++;
+            continue;
         }
 
-        m_MouseController.ProcessMouseInput(input);
-        lastInput = input;
-        hasLastInput = true;
-        processed++;
+        // Unknown packet type from client.
+        break;
     }
 
     if (hasPendingMove)
@@ -425,25 +485,29 @@ void NetworkManager::ProcessPendingMouseInput()
         m_MouseController.ProcessMouseInput(pendingMoveInput);
         lastInput = pendingMoveInput;
         hasLastInput = true;
-        processed++;
+        processedMouse++;
     }
 
-    if (processed > 0)
+    if (processedMouse > 0 || processedKeyboard > 0)
     {
         if (hasLastInput)
         {
-            LOG_DEBUG("NetworkManager::ProcessPendingMouseInput processed={}, lastType={}, x={}, y={}, wheel={}",
-                      processed,
+            LOG_DEBUG("NetworkManager::ProcessPendingMouseInput mouseProcessed={}, keyboardProcessed={}, lastType={}, x={}, y={}, wheel={}",
+                      processedMouse,
+                      processedKeyboard,
                       static_cast<unsigned>(lastInput.InputType),
                       lastInput.X, lastInput.Y, lastInput.WheelDelta);
         }
-        CursorShapePacket cursorPacket;
-        std::vector<BYTE> shapeData;
-        if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
+        if (processedMouse > 0)
         {
-            if (!SendCursorShape(cursorPacket, shapeData))
+            CursorShapePacket cursorPacket;
+            std::vector<BYTE> shapeData;
+            if (m_MouseController.GetCurrentCursorShape(cursorPacket, shapeData))
             {
-                LOG_WARN("NetworkManager::ProcessPendingMouseInput: SendCursorShape failed");
+                if (!SendCursorShape(cursorPacket, shapeData))
+                {
+                    LOG_WARN("NetworkManager::ProcessPendingMouseInput: SendCursorShape failed");
+                }
             }
         }
     }

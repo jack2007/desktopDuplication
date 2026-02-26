@@ -404,12 +404,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
         {
             if (wParam == 'P') // Ctrl + Shift + P
             {
                 if ((GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
                 {
                     ToggleFullscreen(hWnd, true);
+                    break;
                 }
             }
             else if (wParam == 'L') // Ctrl + Shift + L
@@ -417,8 +419,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if ((GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
                 {
                     ToggleFullscreen(hWnd, false);
+                    break;
                 }
             }
+            g_ClientLogic.OnKeyboardInput(static_cast<UINT>(wParam), lParam, false);
+            break;
+        }
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+        {
+            g_ClientLogic.OnKeyboardInput(static_cast<UINT>(wParam), lParam, true);
             break;
         }
         case WM_MOUSEMOVE:
